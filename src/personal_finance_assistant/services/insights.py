@@ -156,17 +156,22 @@ def anomaly_categories(
 def local_question(database_path: str | Path, question: str, month: str) -> str:
     """Answer a small allowlisted set of aggregate questions without external AI."""
 
+    def format_eur(minor_units: int) -> str:
+        sign = "-" if minor_units < 0 else ""
+        value = abs(minor_units)
+        return f"{sign}{value // 100},{value % 100:02d} EUR"
+
     normalized = " ".join(question.casefold().split())
     if "spending" in normalized or "expense" in normalized:
         report = Database(database_path).period_report(
             _month_start(month), _next_month(_month_start(month))
         )
-        return f"Classified spending for {month}: {report.expenses_minor} cents."
+        return f"Classified spending for {month}: {format_eur(report.expenses_minor)}."
     if "income" in normalized or "earn" in normalized:
         report = Database(database_path).period_report(
             _month_start(month), _next_month(_month_start(month))
         )
-        return f"Classified income for {month}: {report.income_minor} cents."
+        return f"Classified income for {month}: {format_eur(report.income_minor)}."
     return "I can answer aggregate spending or income questions for a specified month."
 
 

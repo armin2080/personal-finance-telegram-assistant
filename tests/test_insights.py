@@ -52,7 +52,7 @@ def test_local_question_has_allowlisted_aggregate_intents(tmp_path: Path) -> Non
     database_path = tmp_path / "finance.sqlite3"
     Database(database_path).import_file(parse_sparkasse_csv(FIXTURE))
 
-    assert "2823 cents" in local_question(database_path, "How much spending?", "2026-03")
+    assert "28,23 EUR" in local_question(database_path, "How much spending?", "2026-03")
     assert "income" in local_question(database_path, "What is my income?", "2026-03")
     assert "aggregate spending or income" in local_question(
         database_path, "Tell me a merchant", "2026-03"
