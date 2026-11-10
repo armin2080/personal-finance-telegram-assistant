@@ -1,0 +1,36 @@
+"""Stable category keys for deterministic classification and user review."""
+
+from __future__ import annotations
+
+CATEGORY_REGISTRY: dict[str, str] = {
+    "housing.rent": "Rent",
+    "housing.utilities": "Utilities",
+    "housing.household": "Household",
+    "food.groceries": "Groceries",
+    "food.restaurants": "Restaurants",
+    "food.delivery": "Delivery",
+    "food.coffee": "Coffee",
+    "transport.public_transit": "Public transit",
+    "transport.taxi": "Taxi",
+    "transport.fuel": "Fuel",
+    "transport.other": "Other transport",
+    "shopping.online": "Online shopping",
+    "shopping.clothing": "Clothing",
+    "shopping.electronics": "Electronics",
+    "shopping.general": "General shopping",
+    "subscriptions.digital": "Digital subscriptions",
+    "subscriptions.memberships": "Memberships",
+    "health.pharmacy": "Pharmacy",
+    "health.medical": "Medical",
+    "health.fitness": "Fitness",
+    "education": "Education",
+    "insurance": "Insurance",
+    "fees": "Fees",
+    "leisure": "Leisure",
+    "travel": "Travel",
+    "income.salary": "Salary",
+    "income.refund": "Refund",
+    "income.other": "Other income",
+    "transfers": "Transfers",
+    "uncategorized": "Uncategorised",
+}
