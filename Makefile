@@ -1,4 +1,4 @@
-.PHONY: install test lint format-check typecheck check init-db bot
+.PHONY: install test lint format-check typecheck check init-db bot web
 
 install:
 	python -m pip install -e '.[dev]'
@@ -22,3 +22,6 @@ init-db:
 
 bot:
 	finance-assistant bot
+
+web:
+	finance-assistant web

@@ -26,3 +26,4 @@
 - Added conservative budget and cash-flow forecasts, trend/anomaly analytics, local aggregate questions, disk-capacity safeguards, and AI/bank-sync investigation proposals with no integrations enabled.
 - M0–M5 are now complete; M6 remains local-only with external AI disabled, M7 investigation is documented, and M8 operational safeguards are in progress.
 - Added owner-approved private CSV document uploads with temporary local processing, duplicate-aware import, aggregate analysis replies, and automatic source cleanup.
+- Added transaction movement types, payment-channel and review-state persistence, exact transaction splits, deterministic overview metrics, evidence-backed insights, and a loopback-only dashboard/API.

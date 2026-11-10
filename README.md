@@ -4,7 +4,7 @@
 
 A local-first personal finance assistant that imports German bank transactions, learns merchant/category corrections, explains spending patterns, and provides a private Telegram interface. The intended home for the first deployment is a Raspberry Pi; the initial design deliberately avoids separate cloud compute, a hosted database, Docker, or external AI services. Telegram still processes bot updates and replies through its Bot API.
 
-> **Status: foundation / Milestones 0–5 in progress.** This repository contains the project contract, architecture, security rules, a working parser for the observed Sparkasse CSV-CAMT V8-style export, a duplicate-aware SQLite import path, deterministic classification, explainable reports, budget status, recurring-payment candidates, a restricted Telegram bot, synthetic test data, and CI. It is not yet a complete budgeting or financial-advice product. Follow `AGENTS.md` and `docs/AGENT_EXECUTION_PLAN.md` before extending it.
+> **Status: local-first cockpit MVP in active development.** This repository contains the project contract, architecture, security rules, a working parser for the observed Sparkasse CSV-CAMT V8-style export, a duplicate-aware SQLite import path, deterministic classification, explainable reports, budget status, recurring-payment candidates, a restricted Telegram bot, a loopback-only dashboard, synthetic test data, and CI. It is not financial advice. Follow `AGENTS.md` and `docs/AGENT_EXECUTION_PLAN.md` before extending it.
 
 ## Non-negotiable principles
 
@@ -88,6 +88,15 @@ ruff check .
 ruff format --check .
 pytest
 ```
+
+Run the local dashboard (loopback only):
+
+```bash
+finance-assistant web
+```
+
+Open `http://127.0.0.1:8000/`. The dashboard uses the configured local SQLite
+database and exposes no public listener by default.
 
 ## Telegram commands
 

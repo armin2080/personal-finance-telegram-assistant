@@ -11,8 +11,10 @@ requires-python = ">=3.11"
 license = { text = "Proprietary - no license granted" }
 authors = [{ name = "Project owner" }]
 dependencies = [
+  "fastapi>=0.115,<1",
   "python-telegram-bot>=22.8,<23",
   "python-dotenv>=1.0,<2",
+  "uvicorn>=0.34,<1",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +30,9 @@ finance-assistant = "personal_finance_assistant.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+personal_finance_assistant = ["web/static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

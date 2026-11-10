@@ -175,6 +175,31 @@ Acceptance:
 - AI and bank sync remain disabled unless separately approved.
 - No raw statement or credential is sent to a provider.
 
+## WO-10 — Personal Finance Cockpit extension
+
+**Goal:** provide a local visual cockpit without weakening the reliable import,
+privacy, duplicate, correction, and analytics foundations.
+
+Tasks:
+1. Audit the actual implementation before changing documented claims.
+2. Separate payment channel, movement type, review status, and exact splits.
+3. Expose reusable overview, trend, budget, recurring, insight, and transaction
+   services through a loopback-only web adapter.
+4. Preserve the owner-approved Telegram CSV upload flow with preview,
+   confirmation, cancellation, expiration, and safe failure handling.
+5. Test the dashboard API, static assets, Telegram callbacks, and an independent
+   synthetic 12-month expected-results oracle.
+6. Document visual inspection limitations when browser tooling is unavailable.
+
+Acceptance:
+- The dashboard is started with `finance-assistant web` and binds to
+  `127.0.0.1` by default.
+- API money values remain exact integer minor-unit objects.
+- Upload previews perform no database write until explicit confirmation.
+- Cancelled and expired previews perform no database write.
+- All automated checks pass and remaining visual/remote-access limitations are
+  explicit.
+
 ## Required report after each work order
 
 - Summary of user-visible behaviour.

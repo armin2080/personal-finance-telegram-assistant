@@ -31,7 +31,9 @@ The product is **not** a multi-tenant fintech platform, bank, payment processor,
 - The first production target is a Raspberry Pi-class single-board computer.
 - SQLite is the only production database for the MVP.
 - The Telegram bot is a transport/interface adapter; business logic must not live inside Telegram handlers.
+- A local loopback-only web dashboard is an additional transport adapter over the same application services; financial calculations must not live in frontend code.
 - Use outbound Telegram long polling. Do not expose a public inbound port or configure a webhook for the initial release.
+- The dashboard must bind to `127.0.0.1` by default; do not expose it publicly without a separate authentication and threat-model decision.
 - Import bank exports locally using the CLI. Do not enable Telegram file uploads by default.
 - The first supported bank source is the observed Sparkasse semicolon-delimited CSV-CAMT V8-style export. It is CSV, not CAMT XML.
 - No external LLM, cloud database, analytics SaaS, bank aggregation API, or automatic bank login in the MVP.

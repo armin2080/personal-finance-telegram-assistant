@@ -27,6 +27,7 @@ from personal_finance_assistant.domain import (
     PeriodReport,
     RecurringCandidate,
     ReviewCandidate,
+    TransactionRecord,
 )
 from personal_finance_assistant.ingestion.classification import classify_transaction
 
@@ -959,6 +960,88 @@ class Database:
             quality,
         )
 
+    def list_transactions(
+        self,
+        start: date,
+        end: date,
+        *,
+        search: str | None = None,
+        category_key: str | None = None,
+        classification: str | None = None,
+        review_status: str | None = None,
+        limit: int = 100,
+    ) -> tuple[TransactionRecord, ...]:
+        """Return a bounded owner-visible transaction list for local interfaces."""
+
+        if end <= start or limit < 1 or limit > 500:
+            raise ValueError("invalid transaction query bounds")
+        self.initialize()
+        clauses = ["booking_date >= ?", "booking_date < ?"]
+        parameters: list[object] = [start.isoformat(), end.isoformat()]
+        if search:
+            clauses.append(
+                "(merchant_candidate LIKE ? OR counterparty LIKE ? OR description LIKE ?)"
+            )
+            term = f"%{search}%"
+            parameters.extend((term, term, term))
+        if category_key:
+            clauses.append("category_key = ?")
+            parameters.append(category_key)
+        if classification:
+            clauses.append("classification = ?")
+            parameters.append(classification)
+        if review_status:
+            clauses.append("review_status = ?")
+            parameters.append(review_status)
+        parameters.append(limit)
+        with self.session() as connection:
+            rows = connection.execute(
+                f"""SELECT id, booking_date, amount_minor, currency, merchant_candidate,
+                           counterparty, description, classification, category_key,
+                           review_status, payment_channel
+                    FROM transactions
+                    WHERE {" AND ".join(clauses)}
+                    ORDER BY booking_date DESC, id DESC
+                    LIMIT ?""",
+                parameters,
+            ).fetchall()
+        return tuple(
+            TransactionRecord(
+                transaction_id=row["id"],
+                booking_date=date.fromisoformat(row["booking_date"]),
+                amount_minor=int(row["amount_minor"]),
+                currency=row["currency"],
+                merchant=row["merchant_candidate"],
+                counterparty=row["counterparty"],
+                description=row["description"],
+                classification=row["classification"],
+                category_key=row["category_key"],
+                review_status=row["review_status"],
+                payment_channel=row["payment_channel"],
+            )
+            for row in rows
+        )
+
+    def category_transaction_ids(
+        self, start: date, end: date, category_key: str, *, limit: int = 10
+    ) -> tuple[str, ...]:
+        """Return bounded evidence IDs without exposing row content in logs."""
+
+        if end <= start or limit < 1 or limit > 50:
+            raise ValueError("invalid evidence query bounds")
+        self.initialize()
+        with self.session() as connection:
+            rows = connection.execute(
+                """SELECT id FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                     AND category_key = ?
+                     AND classification = 'expense_candidate'
+                   ORDER BY ABS(amount_minor) DESC, booking_date DESC
+                   LIMIT ?""",
+                (start.isoformat(), end.isoformat(), category_key, limit),
+            ).fetchall()
+        return tuple(row["id"] for row in rows)
+
     def reconcile_period(self, start: date, end: date) -> LedgerReconciliation:
         """Return signed-ledger aggregates alongside classified flow totals."""
 
@@ -1133,6 +1216,17 @@ class Database:
             limit - used_minor,
             used_minor > limit,
         )
+
+    def list_budget_statuses(self, month: str) -> tuple[BudgetStatus, ...]:
+        """Return all configured budgets for a month with classified usage."""
+
+        self.initialize()
+        with self.session() as connection:
+            categories = connection.execute(
+                "SELECT category_key FROM budgets WHERE month = ? ORDER BY category_key",
+                (month,),
+            ).fetchall()
+        return tuple(self.budget_status(month, row["category_key"]) for row in categories)
 
     def category_month_observations(
         self, month: str, category_key: str, end_date: date | None = None

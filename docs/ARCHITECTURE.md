@@ -28,8 +28,9 @@ Sparkasse CSV file (local on Pi)
                                v
                        Merchant/category memory
 
-Telegram private chat <-> thin bot adapter <-> application services
+Telegram private chat <-> thin bot adapter <-> application services <-> SQLite
 Local CLI -------------> same application services
+Loopback web dashboard -> same application services
 ```
 
 ## Layers and responsibilities
@@ -62,7 +63,11 @@ Local CLI -------------> same application services
 
 - CLI: import, inspect, backup, database maintenance, recovery.
 - Telegram: user commands and concise results. No SQL in handlers.
-- Later: optional read-only Mini App only if the owner approves added complexity.
+- Web dashboard: local read-only FastAPI adapter serving a responsive static
+  presentation layer. It binds to loopback by default and has no independent
+  financial calculations.
+- A future Telegram Mini App requires a separate authentication and threat-model
+  decision; it must not be inferred from the local dashboard.
 
 ## Runtime decision: Raspberry Pi over Telegram Serverless
 

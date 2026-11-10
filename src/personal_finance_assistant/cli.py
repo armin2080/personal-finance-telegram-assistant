@@ -211,6 +211,10 @@ def build_parser() -> argparse.ArgumentParser:
     bot_parser = subparsers.add_parser("bot", help="run the Telegram bot using long polling")
     bot_parser.add_argument("--drop-pending-updates", action="store_true")
 
+    web_parser = subparsers.add_parser("web", help="run the local loopback dashboard")
+    web_parser.add_argument("--host", default="127.0.0.1")
+    web_parser.add_argument("--port", type=int, default=8000)
+
     backup_parser = subparsers.add_parser("backup", help="create a consistent SQLite backup")
     backup_parser.add_argument("destination", type=Path)
     return parser
@@ -255,6 +259,13 @@ def main() -> None:
             from personal_finance_assistant.bot.application import run_bot
 
             run_bot(drop_pending_updates=args.drop_pending_updates)
+            return
+        if args.command == "web":
+            import uvicorn
+
+            from personal_finance_assistant.web.app import create_app
+
+            uvicorn.run(create_app(_database().path), host=args.host, port=args.port)
             return
     except (ImportValidationError, StorageCapacityError) as exc:
         print(f"Import error: {exc}", file=sys.stderr)

@@ -25,15 +25,22 @@
 | `merchant_confidence` | 0.0–1.0 confidence for the merchant label. |
 | `amount_minor` | Signed integer EUR cents. |
 | `currency` | `EUR` in MVP. |
-| `classification` | `expense_candidate`, `income_candidate`, `transfer_candidate`, `refund_candidate`, or `unknown`. |
-| `classification_source` | `deterministic`, `user`, or `unreviewed`. |
+| `payment_channel` | `paypal`, `card`, `digital_wallet`, `direct_debit`, `bank_transfer`, `cash`, or `unknown`. |
+| `classification` | `expense_candidate`, `income_candidate`, `transfer_candidate`, `refund_candidate`, `reversal`, `fee`, `cash_withdrawal`, `savings_investment`, or `unknown`. |
+| `classification_source` | `deterministic`, `rule`, `user`, or `unreviewed`. |
 | `classification_confidence` | 0.0–1.0 confidence for the flow classification. |
 | `category_key` | Independent category, initially `uncategorized`. |
+| `subcategory_key` | Optional stable subcategory key. |
 | `category_source` | `unreviewed`, `rule`, or `user`. |
 | `category_confidence` | 0.0–1.0; no confidence is implied for unreviewed rows. |
+| `review_status` | `needs_review`, `confirmed`, or `dismissed`. |
 | `dedupe_key` | Digest used to compare imports; not source reference itself. |
 | `dedupe_basis` | `reference` or `content`. |
 | `created_at` | UTC timestamp. |
+
+Split allocations are stored separately and must reconcile exactly to the
+original signed amount. A split is never accepted when its allocations do not
+sum to the source transaction.
 
 ## Separate concepts
 
@@ -45,6 +52,10 @@
 - **Provenance:** why the system chose a label (user correction, merchant rule, deterministic heuristic, or AI in a future opt-in release).
 
 Never collapse these concepts into one free-text `category` field.
+
+Payment channel is descriptive metadata, not merchant identity. For example,
+PayPal may be the channel while the extracted merchant remains the actual
+counterparty described in the payment purpose.
 
 ## Classification policy
 
@@ -87,6 +98,10 @@ identifiers and labels are presentation values.
 3. High-confidence deterministic mapping.
 4. Low-confidence candidate, requiring review.
 5. Uncategorised/unknown.
+
+Confirmed corrections are marked `review_status = confirmed`; automatic or
+ambiguous suggestions remain reviewable. Dismissal is explicit and does not
+silently convert a movement into an expense.
 
 A re-import or rules update must not overwrite a user correction. Record correction provenance and time.
 

@@ -5,21 +5,24 @@ from __future__ import annotations
 import logging
 import tempfile
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from personal_finance_assistant.categories import CATEGORY_REGISTRY
 from personal_finance_assistant.domain import PeriodReport
-from personal_finance_assistant.ingestion.sparkasse_csv import (
-    ImportValidationError,
-    parse_sparkasse_csv,
-)
 from personal_finance_assistant.services.analytics import (
     get_current_month_summary,
     get_month_report,
@@ -29,14 +32,18 @@ from personal_finance_assistant.services.budgets import (
     get_budget_status,
     list_review_candidates,
 )
-from personal_finance_assistant.services.imports import build_import_preview
 from personal_finance_assistant.services.insights import (
     cash_flow_forecast,
     local_question,
     monthly_trend,
 )
+from personal_finance_assistant.services.uploads import (
+    UploadPreview,
+    build_upload_preview,
+    commit_upload,
+)
 from personal_finance_assistant.settings import Settings
-from personal_finance_assistant.storage.sqlite import Database, StorageCapacityError
+from personal_finance_assistant.storage.sqlite import StorageCapacityError
 
 logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -72,7 +79,11 @@ def _validate_upload_metadata(
 
 async def document_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = _settings(context)
-    if not _is_authorized(update, settings) or not update.effective_message:
+    if (
+        not _is_authorized(update, settings)
+        or not update.effective_message
+        or context.user_data is None
+    ):
         return
     document = update.effective_message.document
     if document is None:
@@ -91,17 +102,8 @@ async def document_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             temporary_path = Path(directory) / "statement.csv"
             remote_file = await document.get_file()
             await remote_file.download_to_drive(custom_path=temporary_path)
-            parsed = parse_sparkasse_csv(temporary_path)
-            preview = build_import_preview(parsed)
-            result = Database(
-                settings.database_path,
-                minimum_free_bytes=settings.minimum_free_bytes,
-            ).import_file(parsed)
-            report = Database(settings.database_path).period_report(
-                preview.first_booking_date,
-                preview.last_booking_date + timedelta(days=1),
-            )
-    except (ImportValidationError, StorageCapacityError, OSError, ValueError) as exc:
+            upload = build_upload_preview(settings.database_path, temporary_path)
+    except (OSError, ValueError, StorageCapacityError) as exc:
         logger.warning("CSV upload processing failed: %s", type(exc).__name__)
         await update.effective_message.reply_text(
             "The CSV could not be processed. No source file was retained; "
@@ -110,9 +112,66 @@ async def document_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     await update.effective_message.reply_text(
-        "CSV processed locally.\n\n"
-        f"Rows: {preview.transaction_count}\n"
-        f"Date range: {preview.first_booking_date} to {preview.last_booking_date}\n"
+        "CSV preview ready.\n\n"
+        f"Rows: {upload.preview.transaction_count}\n"
+        f"Date range: {upload.preview.first_booking_date} to {upload.preview.last_booking_date}\n"
+        f"Reference duplicates: {upload.duplicates.reference_matches}\n"
+        f"Possible duplicates: {len(upload.duplicates.possible_duplicates)}\n\n"
+        "The source file was processed from temporary storage and deleted. "
+        "Confirm to import the canonicalised rows, or cancel.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("Confirm import", callback_data="upload:confirm"),
+                    InlineKeyboardButton("Cancel", callback_data="upload:cancel"),
+                ]
+            ]
+        ),
+    )
+    context.user_data["upload_preview"] = upload
+    context.user_data["upload_preview_created"] = datetime.now(UTC)
+
+
+async def upload_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    settings = _settings(context)
+    if query is None or not _is_authorized(update, settings) or context.user_data is None:
+        return
+    await query.answer()
+    upload = context.user_data.get("upload_preview")
+    created = context.user_data.get("upload_preview_created")
+    if (
+        not isinstance(upload, UploadPreview)
+        or not isinstance(created, datetime)
+        or (datetime.now(UTC) - created).total_seconds() > 600
+    ):
+        await query.edit_message_text("This upload preview expired. Send the CSV again.")
+        context.user_data.pop("upload_preview", None)
+        context.user_data.pop("upload_preview_created", None)
+        return
+    if query.data == "upload:cancel":
+        await query.edit_message_text("Import cancelled. No database changes were made.")
+        context.user_data.pop("upload_preview", None)
+        context.user_data.pop("upload_preview_created", None)
+        return
+    if query.data != "upload:confirm":
+        await query.edit_message_text("Unknown upload action. Send the CSV again.")
+        return
+    try:
+        result, report = commit_upload(
+            settings.database_path,
+            upload,
+            minimum_free_bytes=settings.minimum_free_bytes,
+        )
+    except (OSError, StorageCapacityError, ValueError) as exc:
+        logger.warning("CSV upload commit failed: %s", type(exc).__name__)
+        await query.edit_message_text(
+            "The CSV could not be imported. No source file was retained; "
+            "please use the local CLI for detailed validation."
+        )
+        return
+    await query.edit_message_text(
+        "CSV imported locally.\n\n"
         f"Inserted: {result.inserted}\n"
         f"Exact duplicates skipped: {result.exact_duplicates}\n"
         f"Possible duplicates not inserted: {result.possible_duplicates}\n\n"
@@ -120,10 +179,10 @@ async def document_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"Income: {_format_eur(report.income_minor)}\n"
         f"Refunds: {_format_eur(report.refunds_minor)}\n"
         f"Transfers excluded: {_format_eur(report.transfers_minor)}\n"
-        f"Uncategorised expenses: {_format_eur(report.uncategorized_expenses_minor)}\n\n"
-        "The source file was processed from temporary storage and deleted. "
-        "Possible duplicates require local review."
+        f"Uncategorised expenses: {_format_eur(report.uncategorized_expenses_minor)}"
     )
+    context.user_data.pop("upload_preview", None)
+    context.user_data.pop("upload_preview_created", None)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -461,12 +520,13 @@ def run_bot(*, drop_pending_updates: bool = False) -> None:
     application.add_handler(CommandHandler("trend", trend_command))
     application.add_handler(CommandHandler("forecast", forecast_command))
     application.add_handler(CommandHandler("ask", ask_command))
+    application.add_handler(CallbackQueryHandler(upload_callback, pattern=r"^upload:"))
     application.add_handler(MessageHandler(filters.Document.ALL, document_upload))
     application.add_handler(CommandHandler("budget", budget_command))
     application.add_handler(CommandHandler("subscriptions", subscriptions_command))
     application.add_error_handler(error_handler)
     logger.info("Starting private finance bot in long-polling mode")
     application.run_polling(
-        allowed_updates=["message"],
+        allowed_updates=["message", "callback_query"],
         drop_pending_updates=drop_pending_updates,
     )

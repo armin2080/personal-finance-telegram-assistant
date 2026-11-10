@@ -5,7 +5,8 @@
 ### A. Import a bank export
 
 1. The owner exports booked transactions from online banking.
-2. The owner transfers the file to the Pi using a local method (SSH/SFTP/USB).
+2. The owner transfers the file to the Pi using a local method (SSH/SFTP/USB),
+   or sends one approved CSV document from the allowlisted private Telegram chat.
 3. `finance-assistant inspect FILE` validates layout, date coverage, currency, row count, and warnings without showing private rows.
 4. `finance-assistant import FILE` previews the import and performs no write.
 5. After review, the owner runs `finance-assistant import FILE --commit`.
@@ -57,6 +58,14 @@ Planned in roadmap order:
 - `/settings` — privacy, currency, timezone, and alert preferences.
 
 Every command must be private-chat-only and allowlisted. Do not expose transaction queries to groups or inline mode.
+
+## Local dashboard
+
+The local dashboard is a read-only presentation adapter over the same services
+used by the CLI and Telegram bot. It provides period-aware overview metrics,
+category breakdown, trends, budgets, recurring candidates, evidence-backed
+insights, and bounded searchable transactions. It binds to `127.0.0.1` by
+default; it does not block bank transactions and is not a public web service.
 
 ## UX and language
 

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,8 +12,10 @@ from personal_finance_assistant.bot.application import (
     _settings,
     _validate_upload_metadata,
     document_upload,
+    upload_callback,
 )
 from personal_finance_assistant.domain import CategoryTotal, PeriodReport
+from personal_finance_assistant.services.uploads import build_upload_preview
 from personal_finance_assistant.settings import Settings
 
 
@@ -82,7 +85,7 @@ def test_upload_metadata_accepts_only_small_csv_documents() -> None:
 def test_document_upload_rejects_non_csv_without_downloading(tmp_path: Path) -> None:
     replies: list[str] = []
 
-    async def reply_text(text: str) -> None:
+    async def reply_text(text: str, **_: object) -> None:
         replies.append(text)
 
     message = SimpleNamespace(
@@ -95,7 +98,10 @@ def test_document_upload_rejects_non_csv_without_downloading(tmp_path: Path) -> 
         effective_message=message,
     )
     settings = _settings_for(frozenset({123}))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"settings": settings}))
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": settings}),
+        user_data={},
+    )
 
     asyncio.run(document_upload(update, context))
 
@@ -107,7 +113,7 @@ def test_document_upload_processes_csv_and_returns_aggregates(tmp_path: Path) ->
     database_path = tmp_path / "finance.sqlite3"
     replies: list[str] = []
 
-    async def reply_text(text: str) -> None:
+    async def reply_text(text: str, **_: object) -> None:
         replies.append(text)
 
     async def download_to_drive(*, custom_path: Path) -> None:
@@ -137,12 +143,165 @@ def test_document_upload_processes_csv_and_returns_aggregates(tmp_path: Path) ->
         "INFO",
         minimum_free_bytes=0,
     )
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"settings": settings}))
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": settings}),
+        user_data={},
+    )
 
     asyncio.run(document_upload(update, context))
 
     assert len(replies) == 1
-    assert "CSV processed locally." in replies[0]
+    assert "CSV preview ready." in replies[0]
     assert "Rows: 5" in replies[0]
     assert "private-statement.csv" not in replies[0]
     assert "CARD" not in replies[0]
+
+    edited: list[str] = []
+
+    async def answer() -> None:
+        return None
+
+    async def edit_message_text(text: str) -> None:
+        edited.append(text)
+
+    callback_update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(
+            data="upload:confirm",
+            answer=answer,
+            edit_message_text=edit_message_text,
+        ),
+    )
+    asyncio.run(upload_callback(callback_update, context))
+
+    assert "CSV imported locally." in edited[0]
+    assert "CARD" not in edited[0]
+
+
+def test_upload_callback_cancel_discards_preview(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "sparkasse_sample.csv"
+    database_path = tmp_path / "finance.sqlite3"
+    settings = Settings(
+        None,
+        frozenset({123}),
+        database_path,
+        "Europe/Berlin",
+        "INFO",
+        minimum_free_bytes=0,
+    )
+    upload = build_upload_preview(database_path, fixture)
+    edited: list[str] = []
+
+    async def answer() -> None:
+        return None
+
+    async def edit_message_text(text: str) -> None:
+        edited.append(text)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": settings}),
+        user_data={
+            "upload_preview": upload,
+            "upload_preview_created": datetime.now(UTC),
+        },
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(
+            data="upload:cancel",
+            answer=answer,
+            edit_message_text=edit_message_text,
+        ),
+    )
+
+    asyncio.run(upload_callback(update, context))
+
+    assert edited == ["Import cancelled. No database changes were made."]
+    assert context.user_data == {}
+
+
+def test_upload_callback_expires_preview_without_importing(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "sparkasse_sample.csv"
+    database_path = tmp_path / "finance.sqlite3"
+    settings = Settings(
+        None,
+        frozenset({123}),
+        database_path,
+        "Europe/Berlin",
+        "INFO",
+        minimum_free_bytes=0,
+    )
+    upload = build_upload_preview(database_path, fixture)
+    edited: list[str] = []
+
+    async def answer() -> None:
+        return None
+
+    async def edit_message_text(text: str) -> None:
+        edited.append(text)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": settings}),
+        user_data={
+            "upload_preview": upload,
+            "upload_preview_created": datetime.now(UTC) - timedelta(minutes=11),
+        },
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(
+            data="upload:confirm",
+            answer=answer,
+            edit_message_text=edit_message_text,
+        ),
+    )
+
+    asyncio.run(upload_callback(update, context))
+
+    assert edited == ["This upload preview expired. Send the CSV again."]
+    assert context.user_data == {}
+
+
+def test_upload_callback_rejects_unknown_action(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "sparkasse_sample.csv"
+    database_path = tmp_path / "finance.sqlite3"
+    settings = Settings(
+        None,
+        frozenset({123}),
+        database_path,
+        "Europe/Berlin",
+        "INFO",
+        minimum_free_bytes=0,
+    )
+    upload = build_upload_preview(database_path, fixture)
+    edited: list[str] = []
+
+    async def answer() -> None:
+        return None
+
+    async def edit_message_text(text: str) -> None:
+        edited.append(text)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": settings}),
+        user_data={
+            "upload_preview": upload,
+            "upload_preview_created": datetime.now(UTC),
+        },
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(
+            data="upload:unexpected",
+            answer=answer,
+            edit_message_text=edit_message_text,
+        ),
+    )
+
+    asyncio.run(upload_callback(update, context))
+
+    assert edited == ["Unknown upload action. Send the CSV again."]

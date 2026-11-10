@@ -22,6 +22,10 @@ def get_budget_status(database_path: str | Path, month: str, category_key: str) 
     return Database(database_path).budget_status(month, category_key)
 
 
+def list_budget_statuses(database_path: str | Path, month: str) -> tuple[BudgetStatus, ...]:
+    return Database(database_path).list_budget_statuses(month)
+
+
 def find_recurring_candidates(
     database_path: str | Path,
     *,

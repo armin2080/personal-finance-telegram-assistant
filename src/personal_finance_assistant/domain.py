@@ -170,6 +170,38 @@ class FinancialOverview:
 
 
 @dataclass(frozen=True, slots=True)
+class TransactionRecord:
+    """Owner-visible transaction data for the local dashboard."""
+
+    transaction_id: str
+    booking_date: date
+    amount_minor: int
+    currency: str
+    merchant: str
+    counterparty: str
+    description: str
+    classification: Classification
+    category_key: str
+    review_status: ReviewStatus
+    payment_channel: str
+
+
+@dataclass(frozen=True, slots=True)
+class Insight:
+    """Evidence-backed, deterministic insight for a selected period."""
+
+    insight_id: str
+    title: str
+    explanation: str
+    relevance: str
+    start_date: date
+    end_date: date
+    confidence: str
+    supporting_transaction_ids: tuple[str, ...]
+    next_action: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class LedgerReconciliation:
     start_date: date
     end_date: date

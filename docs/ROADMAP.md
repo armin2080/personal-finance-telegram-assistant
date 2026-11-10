@@ -81,7 +81,7 @@ Status: **DONE**
 
 Exit: all detected recurring items are explainable and labelled as candidates until user-confirmed.
 
-## M6 — Insights and forecasts
+## M6 — Insights, forecasts, and cockpit foundation
 
 Status: **IN PROGRESS**
 
@@ -90,8 +90,27 @@ Status: **IN PROGRESS**
 - [x] Conservative cash-flow forecast with sparse-data warning.
 - [x] Add opt-in natural-language questions over locally calculated aggregates.
 - [x] External LLM remains disabled pending explicit owner approval, data minimisation, provider review, and a kill switch.
+- [x] Add a loopback-only dashboard/API over the existing application services.
+- [x] Add structured deterministic insights with evidence transaction IDs.
+- [ ] Complete review actions, category management, and full dashboard navigation.
 
 Exit: no unsupported advice, unexplained forecasts, or external data egress.
+
+## M6.1 — Personal Finance Cockpit extension
+
+Status: **IN PROGRESS**
+
+- [x] Baseline implementation audit recorded in `docs/IMPROVEMENT_AUDIT.md`.
+- [x] Expand movement types, payment channels, review state, and exact splits.
+- [x] Add overview, trends, budgets, recurring, insights, and transaction API
+  sections.
+- [x] Add responsive local dashboard and local development command.
+- [x] Add Telegram upload preview/confirmation flow.
+- [ ] Add independent 12-month oracle and end-to-end acceptance journeys.
+- [ ] Add browser visual/accessibility inspection.
+
+The dashboard remains loopback-only until a separate authentication and
+threat-model decision approves any remote or Mini App exposure.
 
 ## M7 — Optional banking automation investigation
 

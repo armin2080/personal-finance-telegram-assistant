@@ -8,6 +8,7 @@ from pathlib import Path
 from personal_finance_assistant.domain import (
     BudgetForecast,
     CashFlowForecast,
+    Insight,
     MonthlyTrend,
 )
 from personal_finance_assistant.storage.sqlite import Database
@@ -199,3 +200,94 @@ def budget_recommendations(
                 "the configured budget under the current daily-rate assumption."
             )
     return tuple(recommendations)
+
+
+def generate_insights(
+    database_path: str | Path,
+    start: date,
+    end: date,
+    *,
+    baseline_start: date | None = None,
+    baseline_end: date | None = None,
+) -> tuple[Insight, ...]:
+    """Generate concise evidence-backed insights from deterministic reports."""
+
+    database = Database(database_path)
+    overview = database.financial_overview(
+        start,
+        end,
+        baseline_start=baseline_start,
+        baseline_end=baseline_end,
+    )
+    insights: list[Insight] = []
+    if overview.transaction_count == 0:
+        insights.append(
+            Insight(
+                "no-data",
+                "No activity in this period",
+                "No booked transactions were found for the selected dates.",
+                "low",
+                start,
+                end,
+                "high",
+                (),
+                "Import a booked Sparkasse CSV or choose another period.",
+            )
+        )
+        return tuple(insights)
+    if overview.data_quality != "complete":
+        insights.append(
+            Insight(
+                "review-needed",
+                "Some transactions still need review",
+                "The totals exclude or conservatively separate unresolved classifications.",
+                "high",
+                start,
+                end,
+                "high",
+                (),
+                "Review the queued transactions before relying on category comparisons.",
+            )
+        )
+    if baseline_start is not None and baseline_end is not None:
+        current = database.period_report(start, end)
+        baseline = database.period_report(baseline_start, baseline_end)
+        baseline_categories = dict(
+            (item.category_key, item.amount_minor) for item in baseline.category_expenses
+        )
+        increases = [
+            (item.category_key, item.amount_minor - baseline_categories.get(item.category_key, 0))
+            for item in current.category_expenses
+            if item.amount_minor > baseline_categories.get(item.category_key, 0)
+        ]
+        if increases:
+            category, increase = max(increases, key=lambda item: item[1])
+            evidence = database.category_transaction_ids(start, end, category)
+            insights.append(
+                Insight(
+                    f"category-increase-{category}",
+                    f"{category} is the largest spending increase",
+                    f"Spending is {increase} EUR cents above the comparison period.",
+                    "medium",
+                    start,
+                    end,
+                    "high",
+                    evidence,
+                    "Open the filtered transactions and review the largest contributors.",
+                )
+            )
+    if overview.savings_rate_percent is not None and overview.savings_rate_percent < 0:
+        insights.append(
+            Insight(
+                "negative-net-flow",
+                "Outflows exceeded classified inflows",
+                "Classified expenses and fees were higher than income and refunds in this period.",
+                "high",
+                start,
+                end,
+                "high",
+                (),
+                "Review the largest categories and any unresolved transactions.",
+            )
+        )
+    return tuple(insights)
