@@ -12,8 +12,14 @@ Classification = Literal[
     "income_candidate",
     "transfer_candidate",
     "refund_candidate",
+    "reversal_candidate",
+    "fee_candidate",
+    "cash_withdrawal_candidate",
+    "savings_candidate",
     "unknown",
 ]
+
+ReviewStatus = Literal["needs_review", "confirmed", "dismissed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +44,7 @@ class ParsedTransaction:
     dedupe_key: str
     dedupe_basis: DedupeBasis
     row_number: int
+    payment_channel: str = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +148,25 @@ class PeriodReport:
     uncategorized_expenses_minor: int
     category_expenses: tuple[CategoryTotal, ...]
     transaction_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class FinancialOverview:
+    """Deterministic overview metrics for a selected period and baseline."""
+
+    start_date: date
+    end_date: date
+    baseline_start_date: date | None
+    baseline_end_date: date | None
+    income_minor: int
+    expenses_minor: int
+    refunds_minor: int
+    transfers_minor: int
+    fees_minor: int
+    net_cash_flow_minor: int
+    savings_rate_percent: int | None
+    transaction_count: int
+    data_quality: str
 
 
 @dataclass(frozen=True, slots=True)

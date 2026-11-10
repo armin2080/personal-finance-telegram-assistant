@@ -16,6 +16,7 @@ from personal_finance_assistant.domain import (
     ClassificationResolution,
     DuplicateReason,
     DuplicateReview,
+    FinancialOverview,
     ImportBatchInfo,
     ImportResult,
     LedgerReconciliation,
@@ -29,7 +30,7 @@ from personal_finance_assistant.domain import (
 )
 from personal_finance_assistant.ingestion.classification import classify_transaction
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class StorageCapacityError(RuntimeError):
@@ -222,6 +223,7 @@ class Database:
                 PRAGMA user_version = 4;
                 """
                 )
+                current_version = 4
             elif current_version == 1:
                 connection.executescript(
                     """
@@ -272,6 +274,7 @@ class Database:
                     PRAGMA user_version = 3;
                     """
                 )
+                current_version = 3
             if current_version == 3:
                 connection.executescript(
                     """
@@ -296,6 +299,32 @@ class Database:
                         updated_at TEXT NOT NULL
                     );
                     PRAGMA user_version = 4;
+                    """
+                )
+                current_version = 4
+            if current_version == 4:
+                connection.executescript(
+                    """
+                    ALTER TABLE transactions ADD COLUMN payment_channel TEXT NOT NULL
+                        DEFAULT 'unknown';
+                    ALTER TABLE transactions ADD COLUMN review_status TEXT NOT NULL
+                        DEFAULT 'needs_review';
+                    ALTER TABLE transactions ADD COLUMN subcategory_key TEXT;
+                    ALTER TABLE classification_rules ADD COLUMN priority INTEGER NOT NULL
+                        DEFAULT 0;
+                    CREATE INDEX IF NOT EXISTS idx_transactions_review_status
+                        ON transactions(review_status);
+                    CREATE TABLE IF NOT EXISTS transaction_splits (
+                        id TEXT PRIMARY KEY,
+                        transaction_id TEXT NOT NULL REFERENCES transactions(id),
+                        amount_minor INTEGER NOT NULL CHECK(amount_minor != 0),
+                        category_key TEXT NOT NULL,
+                        note TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_transaction_splits_transaction
+                        ON transaction_splits(transaction_id);
+                    PRAGMA user_version = 5;
                     """
                 )
 
@@ -379,8 +408,8 @@ class Database:
                         merchant_source, merchant_confidence, amount_minor, currency,
                         classification, classification_source, classification_confidence,
                         category_key, category_source, category_confidence,
-                        dedupe_key, dedupe_basis, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        dedupe_key, dedupe_basis, created_at, payment_channel, review_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         str(uuid.uuid4()),
                         import_id,
@@ -404,6 +433,13 @@ class Database:
                         transaction.dedupe_key,
                         transaction.dedupe_basis,
                         now,
+                        transaction.payment_channel,
+                        (
+                            "confirmed"
+                            if classification.category_source == "user"
+                            or classification.classification_source == "user"
+                            else "needs_review"
+                        ),
                     ),
                 )
                 inserted += 1
@@ -450,7 +486,7 @@ class Database:
         ).casefold()
         rules = connection.execute(
             """SELECT pattern, classification, category_key, confidence, rule_version
-               FROM classification_rules ORDER BY updated_at DESC"""
+               FROM classification_rules ORDER BY priority DESC, updated_at DESC"""
         ).fetchall()
         for rule in rules:
             if rule["pattern"].casefold() in text:
@@ -473,6 +509,7 @@ class Database:
         *,
         confidence: float = 1.0,
         rule_version: str = "user-v1",
+        priority: int = 100,
     ) -> None:
         """Store a user rule that takes precedence over deterministic rules."""
 
@@ -484,11 +521,17 @@ class Database:
             "income_candidate",
             "transfer_candidate",
             "refund_candidate",
+            "reversal_candidate",
+            "fee_candidate",
+            "cash_withdrawal_candidate",
+            "savings_candidate",
             "unknown",
         }:
             raise ValueError("unsupported classification")
         if not 0 <= confidence <= 1:
             raise ValueError("classification confidence must be between 0 and 1")
+        if priority < 0:
+            raise ValueError("classification priority cannot be negative")
         self.initialize()
         self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
@@ -496,13 +539,14 @@ class Database:
             connection.execute(
                 """INSERT INTO classification_rules
                    (id, pattern, classification, category_key, confidence, rule_version,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    priority, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(pattern) DO UPDATE SET
                      classification = excluded.classification,
                      category_key = excluded.category_key,
                      confidence = excluded.confidence,
                      rule_version = excluded.rule_version,
+                     priority = excluded.priority,
                      updated_at = excluded.updated_at""",
                 (
                     str(uuid.uuid4()),
@@ -511,6 +555,7 @@ class Database:
                     category_key,
                     confidence,
                     rule_version,
+                    priority,
                     now,
                     now,
                 ),
@@ -526,6 +571,10 @@ class Database:
             "income_candidate",
             "transfer_candidate",
             "refund_candidate",
+            "reversal_candidate",
+            "fee_candidate",
+            "cash_withdrawal_candidate",
+            "savings_candidate",
             "unknown",
         }
         if classification not in allowed or not category_key:
@@ -544,7 +593,8 @@ class Database:
                    SET classification = ?, classification_source = 'user',
                        classification_confidence = 1,
                        category_key = ?, category_source = 'user',
-                       category_confidence = 1
+                       category_confidence = 1,
+                       review_status = 'confirmed'
                    WHERE id = ?""",
                 (classification, category_key, transaction_id),
             )
@@ -553,6 +603,46 @@ class Database:
                    (id, event_type, entity_type, entity_id, created_at)
                    VALUES (?, 'classification_correction', 'transaction', ?, ?)""",
                 (str(uuid.uuid4()), transaction_id, now),
+            )
+
+    def split_transaction(
+        self,
+        transaction_id: str,
+        allocations: tuple[tuple[int, str, str], ...],
+    ) -> None:
+        """Store an exact category split without changing the source amount."""
+
+        if not allocations or any(
+            amount == 0 or not category for amount, category, _ in allocations
+        ):
+            raise ValueError("split allocations must contain non-zero amounts and categories")
+        self.initialize()
+        self.ensure_write_capacity()
+        with self.session() as connection:
+            row = connection.execute(
+                "SELECT amount_minor FROM transactions WHERE id = ?", (transaction_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("transaction was not found")
+            existing = connection.execute(
+                "SELECT 1 FROM transaction_splits WHERE transaction_id = ? LIMIT 1",
+                (transaction_id,),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("transaction already has a split")
+            if sum(amount for amount, _, _ in allocations) != int(row["amount_minor"]):
+                raise ValueError("split allocations must reconcile exactly to the transaction")
+            now = datetime.now(UTC).isoformat()
+            for amount, category, note in allocations:
+                connection.execute(
+                    """INSERT INTO transaction_splits
+                       (id, transaction_id, amount_minor, category_key, note, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (str(uuid.uuid4()), transaction_id, amount, category, note, now),
+                )
+            connection.execute(
+                "UPDATE transactions SET review_status = 'confirmed' WHERE id = ?",
+                (transaction_id,),
             )
 
     def add_merchant_alias(
@@ -817,6 +907,58 @@ class Database:
             transaction_count=len(rows),
         )
 
+    def financial_overview(
+        self,
+        start: date,
+        end: date,
+        *,
+        baseline_start: date | None = None,
+        baseline_end: date | None = None,
+    ) -> FinancialOverview:
+        """Return deterministic cash-flow metrics for a period and optional baseline."""
+
+        if end <= start:
+            raise ValueError("overview end date must be after start date")
+        if (baseline_start is None) != (baseline_end is None):
+            raise ValueError("baseline start and end must be provided together")
+        if baseline_start is not None and (baseline_end is None or baseline_end <= baseline_start):
+            raise ValueError("baseline end date must be after baseline start date")
+        report = self.period_report(start, end)
+        fees = 0
+        with self.session() as connection:
+            fee_row = connection.execute(
+                """SELECT COALESCE(SUM(ABS(amount_minor)), 0)
+                   FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                     AND classification = 'fee_candidate'""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchone()
+            unresolved = connection.execute(
+                """SELECT COUNT(*) FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                     AND (review_status != 'confirmed' OR classification = 'unknown')""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchone()[0]
+            fees = int(fee_row[0])
+        net = report.income_minor + report.refunds_minor - report.expenses_minor - fees
+        savings_rate = round(net * 100 / report.income_minor) if report.income_minor else None
+        quality = "complete" if int(unresolved) == 0 else "review_needed"
+        return FinancialOverview(
+            start,
+            end,
+            baseline_start,
+            baseline_end,
+            report.income_minor,
+            report.expenses_minor,
+            report.refunds_minor,
+            report.transfers_minor,
+            fees,
+            net,
+            savings_rate,
+            report.transaction_count,
+            quality,
+        )
+
     def reconcile_period(self, start: date, end: date) -> LedgerReconciliation:
         """Return signed-ledger aggregates alongside classified flow totals."""
 
@@ -907,7 +1049,7 @@ class Database:
             rows = connection.execute(
                 """SELECT id, booking_date, value_date, booking_text, description,
                           counterparty, merchant_candidate, amount_minor, currency,
-                          dedupe_key, dedupe_basis
+                          dedupe_key, dedupe_basis, payment_channel
                    FROM transactions
                    WHERE classification_source != 'user' OR category_source != 'user'"""
             ).fetchall()
@@ -928,6 +1070,7 @@ class Database:
                     dedupe_key=row["dedupe_key"],
                     dedupe_basis=row["dedupe_basis"],
                     row_number=0,
+                    payment_channel=row["payment_channel"],
                 )
                 resolution = self._resolve_classification(connection, transaction)
                 updates: list[object] = [

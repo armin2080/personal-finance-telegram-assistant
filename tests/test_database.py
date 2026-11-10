@@ -377,9 +377,69 @@ def test_health_status_contains_no_financial_values(tmp_path: Path) -> None:
 
     status = database.health_status()
 
-    assert status["schema_version"] == 4
+    assert status["schema_version"] == 5
     assert status["import_batches"] == 1
     assert status["transactions"] == 5
+
+
+def test_financial_overview_is_exact_and_tracks_review_quality(tmp_path: Path) -> None:
+    database = Database(tmp_path / "finance.sqlite3")
+    result = database.import_file(parse_sparkasse_csv(FIXTURE))
+
+    overview = database.financial_overview(
+        __import__("datetime").date(2026, 3, 1),
+        __import__("datetime").date(2026, 4, 1),
+        baseline_start=__import__("datetime").date(2026, 2, 1),
+        baseline_end=__import__("datetime").date(2026, 3, 1),
+    )
+
+    assert overview.expenses_minor == 2823
+    assert overview.income_minor == 0
+    assert overview.net_cash_flow_minor == -2823
+    assert overview.savings_rate_percent is None
+    assert overview.baseline_start_date == __import__("datetime").date(2026, 2, 1)
+    assert overview.data_quality == "review_needed"
+
+    with sqlite3.connect(tmp_path / "finance.sqlite3") as connection:
+        transaction_id = connection.execute(
+            "SELECT id FROM transactions WHERE import_id = ? LIMIT 1", (result.import_id,)
+        ).fetchone()[0]
+    database.correct_transaction_classification(
+        transaction_id, "expense_candidate", "food.groceries"
+    )
+    assert (
+        database.financial_overview(
+            __import__("datetime").date(2026, 3, 1),
+            __import__("datetime").date(2026, 4, 1),
+        ).data_quality
+        == "review_needed"
+    )
+
+
+def test_transaction_split_requires_exact_reconciliation(tmp_path: Path) -> None:
+    database = Database(tmp_path / "finance.sqlite3")
+    result = database.import_file(parse_sparkasse_csv(FIXTURE))
+    with sqlite3.connect(tmp_path / "finance.sqlite3") as connection:
+        transaction_id, amount = connection.execute(
+            "SELECT id, amount_minor FROM transactions WHERE import_id = ? "
+            "ORDER BY amount_minor LIMIT 1",
+            (result.import_id,),
+        ).fetchone()
+
+    with pytest.raises(ValueError, match="reconcile exactly"):
+        database.split_transaction(
+            transaction_id,
+            ((amount + 1, "food.groceries", ""), (-2, "food.restaurants", "")),
+        )
+    database.split_transaction(
+        transaction_id,
+        ((amount // 2, "food.groceries", ""), (amount - amount // 2, "food.restaurants", "")),
+    )
+    with pytest.raises(ValueError, match="already has a split"):
+        database.split_transaction(
+            transaction_id,
+            ((amount, "food.groceries", ""),),
+        )
 
 
 def test_reconciliation_exposes_raw_and_classified_aggregate_totals(tmp_path: Path) -> None:

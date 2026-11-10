@@ -32,5 +32,10 @@ CATEGORY_REGISTRY: dict[str, str] = {
     "income.refund": "Refund",
     "income.other": "Other income",
     "transfers": "Transfers",
+    "financial.fees": "Financial fees",
+    "cash.withdrawal": "Cash",
+    "savings.investments": "Savings and investments",
+    "personal_care": "Personal care",
+    "gifts_donations": "Gifts and donations",
     "uncategorized": "Uncategorised",
 }

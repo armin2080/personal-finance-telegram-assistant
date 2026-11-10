@@ -152,6 +152,23 @@ def _classify(amount_minor: int, booking_text: str) -> Classification:
     return "unknown"
 
 
+def _payment_channel(booking_text: str) -> str:
+    text = booking_text.casefold()
+    if "paypal" in text:
+        return "paypal"
+    if "digitale karte" in text:
+        return "digital_wallet"
+    if "karten" in text or "card" in text:
+        return "card"
+    if "lastschrift" in text:
+        return "direct_debit"
+    if "überweisung" in text or "ueberweisung" in text:
+        return "bank_transfer"
+    if "bargeld" in text or "geldautomat" in text or "atm" in text:
+        return "cash"
+    return "unknown"
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -319,6 +336,7 @@ def parse_sparkasse_csv(path: str | Path) -> ParseResult:
                     dedupe_key=dedupe_key,
                     dedupe_basis=dedupe_basis,
                     row_number=row_number,
+                    payment_channel=_payment_channel(booking_text),
                 )
             )
         except (ValueError, AssertionError) as exc:

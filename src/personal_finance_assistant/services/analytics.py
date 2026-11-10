@@ -7,7 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from personal_finance_assistant.domain import LedgerReconciliation, PeriodReport
+from personal_finance_assistant.domain import FinancialOverview, LedgerReconciliation, PeriodReport
 from personal_finance_assistant.storage.sqlite import Database
 
 
@@ -30,6 +30,22 @@ def get_period_report(database_path: str | Path, start: date, end: date) -> Peri
 
 def reconcile_period(database_path: str | Path, start: date, end: date) -> LedgerReconciliation:
     return Database(database_path).reconcile_period(start, end)
+
+
+def get_financial_overview(
+    database_path: str | Path,
+    start: date,
+    end: date,
+    *,
+    baseline_start: date | None = None,
+    baseline_end: date | None = None,
+) -> FinancialOverview:
+    return Database(database_path).financial_overview(
+        start,
+        end,
+        baseline_start=baseline_start,
+        baseline_end=baseline_end,
+    )
 
 
 def get_month_report(database_path: str | Path, year: int, month: int) -> PeriodReport:
