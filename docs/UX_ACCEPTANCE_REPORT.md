@@ -31,10 +31,11 @@
 
 ## Visually inspected
 
-- Static HTML/CSS structure and responsive breakpoints were reviewed in source.
-- A browser-based visual inspection has **not** yet been performed in this
-  environment because no browser automation tool or Node frontend toolchain is
-  available.
+- The loopback dashboard was opened in the integrated browser and its empty
+  state, period controls, responsive section structure, accessible labels, and
+  error-safe loading behavior were inspected.
+- A full populated-period screenshot review across desktop and mobile widths
+  has not yet been performed.
 
 ## Not yet implemented
 

@@ -32,12 +32,14 @@ const load = async () => {
     $("count").textContent = overview.transaction_count;
     $("quality").textContent = overview.data_quality === "complete" ? "Reviewed data" : "Review needed";
     $("quality").classList.toggle("warning", overview.data_quality !== "complete");
-    const [transactions, insights, trends, budgets, recurring] = await Promise.all([
+    const [transactions, insights, trends, budgets, recurring, merchants, weeklyTrends] = await Promise.all([
       request(`/api/transactions?${query}&search=${encodeURIComponent(state.search)}`),
       request(`/api/insights?${query}`),
       request(`/api/trends?end_month=${state.end.slice(0, 7)}&months=6`),
       request(`/api/budgets?month=${state.start.slice(0, 7)}`),
       request("/api/recurring"),
+      request(`/api/merchants?${query}`),
+      request(`/api/weekly-trends?${query}`),
     ]);
     $("transactions").innerHTML = transactions.transactions.length
       ? transactions.transactions.map((row) => `<tr><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.merchant)}</td><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.classification)}</td><td class="${row.review_status === "confirmed" ? "confirmed" : "review"}">${escapeHtml(row.review_status)}</td><td class="amount">${money(row.amount)}</td></tr>`).join("")
@@ -52,6 +54,14 @@ const load = async () => {
       : '<p class="muted">No classified categories in this period.</p>';
     const trendMaximum = Math.max(...trends.months.flatMap((item) => [item.expenses.minor, item.income.minor]), 1);
     $("trends").innerHTML = trends.months.map((item) => `<div class="trend-row"><span class="trend-label">${escapeHtml(item.month)}</span><div class="trend-line" title="Expenses: ${money(item.expenses)}" style="width:${Math.max(3, Math.round(item.expenses.minor * 100 / trendMaximum))}%"></div><div class="trend-line income" title="Income: ${money(item.income)}" style="width:${Math.max(3, Math.round(item.income.minor * 100 / trendMaximum))}%"></div></div>`).join("");
+    const merchantMaximum = Math.max(...merchants.merchants.map((item) => item.amount.minor), 1);
+    $("merchants").innerHTML = merchants.merchants.length
+      ? merchants.merchants.slice(0, 8).map((item) => `<div class="bar-row"><div class="bar-label"><span>${escapeHtml(item.merchant)}</span><strong>${money(item.amount)}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(item.amount.minor * 100 / merchantMaximum)}%"></div></div></div>`).join("")
+      : '<p class="muted">No classified merchant expenses in this period.</p>';
+    const weeklyMaximum = Math.max(...weeklyTrends.weeks.flatMap((item) => [item.expenses.minor, item.income.minor]), 1);
+    $("weekly-trends").innerHTML = weeklyTrends.weeks.length
+      ? weeklyTrends.weeks.map((item) => `<div class="trend-row"><span class="trend-label">${escapeHtml(item.start)}</span><div class="trend-line" title="Expenses: ${money(item.expenses)}" style="width:${Math.max(3, Math.round(item.expenses.minor * 100 / weeklyMaximum))}%"></div><div class="trend-line income" title="Income: ${money(item.income)}" style="width:${Math.max(3, Math.round(item.income.minor * 100 / weeklyMaximum))}%"></div></div>`).join("")
+      : '<p class="muted">No weekly activity in this period.</p>';
     $("budgets").innerHTML = budgets.budgets.length
       ? budgets.budgets.map((item) => `<div class="budget-row"><div class="budget-label"><span>${escapeHtml(item.category)}</span><strong>${money(item.remaining)}</strong></div><div class="budget-meta">${money(item.used)} used of ${money(item.limit)}${item.exceeded ? " · over budget" : ""}</div></div>`).join("")
       : '<p class="muted">No budgets configured for this month.</p>';
