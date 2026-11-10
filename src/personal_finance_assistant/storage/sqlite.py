@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import uuid
 from collections.abc import Iterator
@@ -19,6 +20,7 @@ from personal_finance_assistant.domain import (
     ImportResult,
     LedgerReconciliation,
     MerchantResolution,
+    MonthlyTrend,
     ParsedTransaction,
     ParseResult,
     PeriodReport,
@@ -30,9 +32,23 @@ from personal_finance_assistant.ingestion.classification import classify_transac
 SCHEMA_VERSION = 4
 
 
+class StorageCapacityError(RuntimeError):
+    """Raised when a write would risk exhausting the local filesystem."""
+
+
 class Database:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, minimum_free_bytes: int = 100 * 1024 * 1024) -> None:
         self.path = Path(path).expanduser()
+        if minimum_free_bytes < 0:
+            raise ValueError("minimum free bytes cannot be negative")
+        self.minimum_free_bytes = minimum_free_bytes
+
+    def ensure_write_capacity(self) -> None:
+        free_bytes = shutil.disk_usage(self.path.parent).free
+        if free_bytes < self.minimum_free_bytes:
+            raise StorageCapacityError(
+                f"insufficient free storage; need at least {self.minimum_free_bytes} bytes"
+            )
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -298,6 +314,7 @@ class Database:
         """
 
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         import_id = str(uuid.uuid4())
         inserted = 0
@@ -473,6 +490,7 @@ class Database:
         if not 0 <= confidence <= 1:
             raise ValueError("classification confidence must be between 0 and 1")
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         with self.session() as connection:
             connection.execute(
@@ -513,6 +531,7 @@ class Database:
         if classification not in allowed or not category_key:
             raise ValueError("classification and category are required")
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         with self.session() as connection:
             transaction = connection.execute(
@@ -548,6 +567,7 @@ class Database:
         if not 0 <= confidence <= 1:
             raise ValueError("merchant confidence must be between 0 and 1")
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         with self.session() as connection:
             entity = connection.execute(
@@ -586,6 +606,7 @@ class Database:
         if not merchant:
             raise ValueError("merchant correction is required")
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         with self.session() as connection:
             transaction = connection.execute(
@@ -880,6 +901,7 @@ class Database:
         """Reapply current generic rules without overwriting user decisions."""
 
         self.initialize()
+        self.ensure_write_capacity()
         changed = 0
         with self.session() as connection:
             rows = connection.execute(
@@ -929,6 +951,7 @@ class Database:
 
     def set_budget(self, month: str, category_key: str, limit_minor: int) -> None:
         self.initialize()
+        self.ensure_write_capacity()
         now = datetime.now(UTC).isoformat()
         with self.session() as connection:
             connection.execute(
@@ -968,10 +991,65 @@ class Database:
             used_minor > limit,
         )
 
+    def category_month_observations(
+        self, month: str, category_key: str, end_date: date | None = None
+    ) -> tuple[int, int]:
+        """Return classified expense cents and count for a month-to-date window."""
+
+        self.initialize()
+        start = date.fromisoformat(f"{month}-01")
+        if end_date is None:
+            end_date = date(
+                start.year + (start.month == 12), 1 if start.month == 12 else start.month + 1, 1
+            )
+        with self.session() as connection:
+            row = connection.execute(
+                """SELECT COALESCE(SUM(-amount_minor), 0) AS used, COUNT(*) AS observations
+                   FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                     AND category_key = ?
+                     AND classification = 'expense_candidate'
+                     AND amount_minor < 0""",
+                (start.isoformat(), end_date.isoformat(), category_key),
+            ).fetchone()
+        return int(row["used"]), int(row["observations"])
+
+    def monthly_trends(self, months: tuple[str, ...]) -> tuple[MonthlyTrend, ...]:
+        self.initialize()
+        result: list[MonthlyTrend] = []
+        for month in months:
+            summary = self.monthly_summary(month)
+            result.append(MonthlyTrend(month, summary["expenses_minor"], summary["income_minor"]))
+        return tuple(result)
+
+    def month_flow_observations(
+        self, month: str, end_date: date | None = None
+    ) -> tuple[int, int, int]:
+        self.initialize()
+        start = date.fromisoformat(f"{month}-01")
+        if end_date is None:
+            end_date = date(
+                start.year + (start.month == 12), 1 if start.month == 12 else start.month + 1, 1
+            )
+        with self.session() as connection:
+            row = connection.execute(
+                """SELECT
+                     COALESCE(SUM(CASE WHEN classification = 'expense_candidate'
+                       AND amount_minor < 0 THEN -amount_minor ELSE 0 END), 0) AS expenses,
+                     COALESCE(SUM(CASE WHEN classification = 'income_candidate'
+                       AND amount_minor > 0 THEN amount_minor ELSE 0 END), 0) AS income,
+                     COUNT(*) AS observations
+                   FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?""",
+                (start.isoformat(), end_date.isoformat()),
+            ).fetchone()
+        return int(row["expenses"]), int(row["income"]), int(row["observations"])
+
     def recurring_candidates(
         self, *, minimum_observations: int = 3, tolerance_minor: int = 100
     ) -> tuple[RecurringCandidate, ...]:
         self.initialize()
+        self.ensure_write_capacity()
         with self.session() as connection:
             rows = connection.execute(
                 """SELECT merchant_candidate, booking_date, -amount_minor AS amount_minor
@@ -1027,6 +1105,7 @@ class Database:
         if not merchant.strip() or decision not in {"confirmed", "dismissed"}:
             raise ValueError("merchant and recurring decision are required")
         self.initialize()
+        self.ensure_write_capacity()
         with self.session() as connection:
             connection.execute(
                 """INSERT INTO recurring_decisions (merchant, decision, updated_at)
@@ -1042,6 +1121,7 @@ class Database:
         if not category_key or not 1 <= threshold_percent <= 100:
             raise ValueError("alert category and threshold must be valid")
         self.initialize()
+        self.ensure_write_capacity()
         with self.session() as connection:
             connection.execute(
                 """INSERT INTO budget_alert_preferences
@@ -1102,6 +1182,7 @@ class Database:
         """Create a consistent SQLite backup using SQLite's online backup API."""
 
         self.initialize()
+        self.ensure_write_capacity()
         target = Path(destination).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.session() as source:
@@ -1128,6 +1209,7 @@ class Database:
                 "transactions": int(
                     connection.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
                 ),
+                "free_bytes": shutil.disk_usage(self.path.parent).free,
             }
 
     def purge(self, *, confirm: bool = False) -> int:

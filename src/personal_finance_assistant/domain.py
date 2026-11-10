@@ -158,6 +158,39 @@ class LedgerReconciliation:
 
 
 @dataclass(frozen=True, slots=True)
+class BudgetForecast:
+    month: str
+    category_key: str
+    as_of: date
+    observed_days: int
+    observations: int
+    used_minor: int
+    projected_minor: int | None
+    limit_minor: int | None
+    confidence: str
+    sparse_data: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MonthlyTrend:
+    month: str
+    expenses_minor: int
+    income_minor: int
+
+
+@dataclass(frozen=True, slots=True)
+class CashFlowForecast:
+    month: str
+    as_of: date
+    observed_days: int
+    observations: int
+    net_observed_minor: int
+    projected_net_minor: int | None
+    confidence: str
+    sparse_data: bool
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetStatus:
     month: str
     category_key: str

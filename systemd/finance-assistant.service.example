@@ -10,6 +10,7 @@ Group=financebot
 WorkingDirectory=/opt/personal-finance-assistant
 EnvironmentFile=/etc/finance-assistant/bot.env
 Environment=PYTHONUNBUFFERED=1
+Environment=FPA_MIN_FREE_BYTES=104857600
 ExecStart=/opt/personal-finance-assistant/.venv/bin/finance-assistant bot
 Restart=on-failure
 RestartSec=10

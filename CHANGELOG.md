@@ -23,3 +23,5 @@
 - Added local review/status commands and an explicit, documented database deletion path.
 - Added reconciliation aggregates, review queue Telegram count, rate-limited budget alerts, and recurring candidate confirm/dismiss decisions.
 - Validated the owner-provided CSV on the Pi with aggregate inspect/dry-run output only; the temporary source file was removed and the deployed 62-test suite remains green.
+- Added conservative budget and cash-flow forecasts, trend/anomaly analytics, local aggregate questions, disk-capacity safeguards, and AI/bank-sync investigation proposals with no integrations enabled.
+- M0–M5 are now complete; M6 remains local-only with external AI disabled, M7 investigation is documented, and M8 operational safeguards are in progress.

@@ -406,6 +406,13 @@ def test_purge_requires_confirmation_and_removes_database(tmp_path: Path) -> Non
     assert not database.path.exists()
 
 
+def test_low_storage_refuses_writes_before_import(tmp_path: Path) -> None:
+    database = Database(tmp_path / "finance.sqlite3", minimum_free_bytes=10**18)
+
+    with pytest.raises(RuntimeError, match="insufficient free storage"):
+        database.import_file(parse_sparkasse_csv(FIXTURE))
+
+
 def test_budget_alert_is_rate_limited_per_month_and_threshold(tmp_path: Path) -> None:
     database = Database(tmp_path / "finance.sqlite3")
     database.add_classification_rule(

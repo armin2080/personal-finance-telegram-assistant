@@ -23,6 +23,11 @@ from personal_finance_assistant.services.budgets import (
     get_budget_status,
     list_review_candidates,
 )
+from personal_finance_assistant.services.insights import (
+    cash_flow_forecast,
+    local_question,
+    monthly_trend,
+)
 from personal_finance_assistant.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -65,6 +70,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/income — current month's income and refunds\n"
         "/compare — compare current and previous month\n"
         "/review — count transactions needing local review\n"
+        "/trend — recent classified expense/income trend\n"
+        "/forecast — conservative month-end cash-flow forecast\n"
+        "/ask QUESTION — local aggregate-only question\n"
         "/budget CATEGORY — current month's budget status\n"
         "/subscriptions — repeated payment candidates for review\n"
         "/privacy — how data is handled\n"
@@ -247,6 +255,64 @@ async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def trend_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    year, month = _current_month(settings)
+    points = monthly_trend(settings.database_path, f"{year:04d}-{month:02d}", months=3)
+    lines = ["Recent classified trend (booking months):"]
+    lines.extend(
+        f"• {point.month}: expenses {_format_eur(point.expenses_minor)}, "
+        f"income {_format_eur(point.income_minor)}"
+        for point in points
+    )
+    lines.append("Transfers, refunds, and uncertain rows are excluded.")
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+async def forecast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    year, month = _current_month(settings)
+    forecast = cash_flow_forecast(
+        settings.database_path,
+        f"{year:04d}-{month:02d}",
+        as_of=datetime.now(ZoneInfo(settings.user_timezone)).date(),
+    )
+    if forecast.sparse_data:
+        text = (
+            f"Forecast for {forecast.month} is unavailable: only {forecast.observations} "
+            f"observations across {forecast.observed_days} observed days. "
+            "At least 7 days and 3 observations are required."
+        )
+    else:
+        text = (
+            f"Conservative cash-flow forecast for {forecast.month}: "
+            f"{_format_eur(forecast.projected_net_minor or 0)} net.\n"
+            "Assumption: current classified daily net flow continues through the month; "
+            "this is a moderate-confidence estimate."
+        )
+    await update.effective_message.reply_text(text)
+
+
+async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    question = " ".join(context.args or []).strip()
+    if not question:
+        await update.effective_message.reply_text(
+            "Usage: /ask QUESTION\nOnly aggregate spending and income questions are supported locally."
+        )
+        return
+    year, month = _current_month(settings)
+    await update.effective_message.reply_text(
+        local_question(settings.database_path, question, f"{year:04d}-{month:02d}")
+    )
+
+
 async def subscriptions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = _settings(context)
     if not _is_authorized(update, settings) or not update.effective_message:
@@ -313,6 +379,9 @@ def run_bot(*, drop_pending_updates: bool = False) -> None:
     application.add_handler(CommandHandler("income", income_command))
     application.add_handler(CommandHandler("compare", compare_command))
     application.add_handler(CommandHandler("review", review_command))
+    application.add_handler(CommandHandler("trend", trend_command))
+    application.add_handler(CommandHandler("forecast", forecast_command))
+    application.add_handler(CommandHandler("ask", ask_command))
     application.add_handler(CommandHandler("budget", budget_command))
     application.add_handler(CommandHandler("subscriptions", subscriptions_command))
     application.add_error_handler(error_handler)

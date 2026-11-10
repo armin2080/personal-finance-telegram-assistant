@@ -119,7 +119,7 @@ storage or previously created encrypted backups.
 - [x] Service restarts after a Pi reboot.
 - [x] Bot reaches the Telegram Bot API over outbound HTTPS.
 - [x] Owner verified `/start` and `/summary` from the allowlisted private chat.
-- [ ] Disk-space threshold/monitoring configured.
+- [x] Disk-space threshold/monitoring configured through `FPA_MIN_FREE_BYTES`.
 - [ ] Backup schedule chosen and encrypted off-device backup tested.
 - [x] SQLite online backup restored to a separate file and passed `PRAGMA integrity_check`.
 - [x] Token is configured in the private environment file; rotation procedure remains owner-controlled.
@@ -136,3 +136,7 @@ production bot memory bound.
 The unit is installed but remains disabled and inactive until the owner adds a
 real `TELEGRAM_BOT_TOKEN` and numeric `TELEGRAM_ALLOWED_USER_IDS` to the private
 environment file. Do not start it with placeholder or missing credentials.
+
+The application refuses import, budget, and backup writes when free storage
+falls below `FPA_MIN_FREE_BYTES` (100 MiB by default). Read-only status/report
+operations remain available so the owner can recover space safely.

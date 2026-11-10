@@ -92,8 +92,10 @@ pytest
 ## Telegram commands
 
 The private bot supports `/summary`, `/spending`, `/income`, `/compare`, `/review`,
-`/budget CATEGORY`, and `/subscriptions`. Budget and recurring-payment output
-is aggregate-only; repeated payments remain unconfirmed candidates.
+`/budget CATEGORY`, `/subscriptions`, `/trend`, `/forecast`, and `/ask QUESTION`.
+Budget, insight, and recurring-payment output is aggregate-only; repeated payments
+remain unconfirmed candidates. `/ask` is a small local allowlisted query surface,
+not an external AI integration.
 
 ## Telegram setup
 

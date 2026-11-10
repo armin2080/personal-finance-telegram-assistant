@@ -68,7 +68,7 @@ This product handles highly sensitive personal financial activity. Treat the dat
 3. **Persistence:** only canonicalised transaction data, import metadata, and derived digests are stored in SQLite.
 4. **Use:** local analytics and concise Telegram summaries.
 5. **Backup:** consistent SQLite backup; encrypted before off-device storage.
-6. **Deletion:** future release must implement a user-confirmed full purge (transactions, import batches, rules, budgets, backups under app control) and verify it. A secure deletion promise cannot be made for SD-card wear-levelled storage.
+6. **Deletion:** use the user-confirmed local purge command after creating any required backup. This removes the application database and SQLite sidecars; backups under app control must be handled separately. A secure deletion promise cannot be made for SD-card wear-levelled storage.
 
 ## Incident response
 

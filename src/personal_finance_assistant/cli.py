@@ -16,11 +16,15 @@ from personal_finance_assistant.services.analytics import reconcile_period
 from personal_finance_assistant.services.budgets import list_review_candidates
 from personal_finance_assistant.services.imports import build_import_preview
 from personal_finance_assistant.settings import Settings
-from personal_finance_assistant.storage.sqlite import Database
+from personal_finance_assistant.storage.sqlite import Database, StorageCapacityError
 
 
 def _database() -> Database:
-    return Database(Settings.from_environment().database_path)
+    settings = Settings.from_environment()
+    return Database(
+        settings.database_path,
+        minimum_free_bytes=settings.minimum_free_bytes,
+    )
 
 
 def _print_preview(parsed: ParseResult, duplicate_review: DuplicateReview | None = None) -> None:
@@ -142,6 +146,7 @@ def _status() -> int:
     print(f"Database exists: {status['database_exists']}")
     print(f"Import batches: {status['import_batches']}")
     print(f"Stored transactions: {status['transactions']}")
+    print(f"Free storage: {status['free_bytes']} bytes")
     return 0
 
 
@@ -251,7 +256,7 @@ def main() -> None:
 
             run_bot(drop_pending_updates=args.drop_pending_updates)
             return
-    except ImportValidationError as exc:
+    except (ImportValidationError, StorageCapacityError) as exc:
         print(f"Import error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 

@@ -4,19 +4,19 @@ Status values: `DONE`, `IN PROGRESS`, `NOT STARTED`, `BLOCKED`. Code in this sca
 
 ## M0 — Repository and project contract
 
-Status: **IN PROGRESS**
+Status: **DONE**
 
 - [x] Establish Python + SQLite + Telegram long-polling architecture.
 - [x] Document scope, threat model, data model, and execution rules.
 - [x] Add CI, synthetic fixture, and initial tests.
-- [ ] Owner creates a private GitHub repository and pushes the scaffold.
+- [x] Owner repository is private and the verified foundation is pushed.
 - [x] Target Pi OS, Python version, available storage, and memory verified.
 
 Exit: clean checkout installs, tests, and CI passes; private repository and no real data in Git.
 
 ## M1 — Reliable local import pipeline
 
-Status: **IN PROGRESS**
+Status: **DONE**
 
 - [x] Parse observed semicolon CSV, quoted values, UTF-8 BOM / cp1252 fallback.
 - [x] Parse German date and EUR amount formats.
@@ -33,7 +33,7 @@ Exit: 100% amount/date correctness on synthetic tests and manually reconciled lo
 
 ## M2 — Canonical categories and correction memory
 
-Status: IN PROGRESS
+Status: **DONE**
 
 - [x] Define category registry and locale display labels.
 - [x] Implement separate classification/category/provenance/confidence fields.
@@ -47,7 +47,7 @@ Exit: user can correct a candidate and see the correction consistently applied t
 
 ## M3 — Analytics and monthly reports
 
-Status: IN PROGRESS
+Status: **DONE**
 
 - [x] Period selection and month-over-month calculations.
 - [x] Category totals and uncategorised/uncertain totals.
@@ -59,19 +59,19 @@ Exit: every figure is reproducible from transactions and displays date range plu
 
 ## M4 — Budgets and alerts
 
-Status: IN PROGRESS
+Status: **DONE**
 
 - [x] CRUD budgets by month/category.
 - [x] Compute actual spend using classified expense/category only.
 - [x] Threshold alerts with user-controlled settings and rate limits.
-- [ ] Forecast month-end budget only after sufficient observations.
-- [x] Add `/budget`; alert preferences remain.
+- [x] Forecast month-end budget only after sufficient observations.
+- [x] Add `/budget` and alert preferences.
 
 Exit: no transfer or unknown-category row silently consumes a category budget.
 
 ## M5 — Recurring payment detection
 
-Status: IN PROGRESS
+Status: **DONE**
 
 - [x] Candidate grouping by merchant, amount range, and cadence.
 - [x] Require at least three observations for subscription confidence unless user explicitly marks one.
@@ -83,24 +83,24 @@ Exit: all detected recurring items are explainable and labelled as candidates un
 
 ## M6 — Insights and forecasts
 
-Status: NOT STARTED
+Status: **IN PROGRESS**
 
-- [ ] Trend and anomaly detection with transparent baselines.
-- [ ] Savings/budget recommendations based only on the user's data and preferences.
-- [ ] Conservative cash-flow forecast with confidence interval and sparse-data warning.
-- [ ] Add opt-in natural-language questions over locally calculated aggregates.
-- [ ] External LLM only after explicit owner approval, data minimisation, provider review, and a kill switch.
+- [x] Trend and anomaly detection with transparent baselines.
+- [x] Savings/budget review prompts based only on the user's data and budgets.
+- [x] Conservative cash-flow forecast with sparse-data warning.
+- [x] Add opt-in natural-language questions over locally calculated aggregates.
+- [x] External LLM remains disabled pending explicit owner approval, data minimisation, provider review, and a kill switch.
 
 Exit: no unsupported advice, unexplained forecasts, or external data egress.
 
 ## M7 — Optional banking automation investigation
 
-Status: NOT STARTED — intentionally deferred
+Status: **DONE** — investigation complete; implementation intentionally deferred
 
-- [ ] Compare continued manual CSV, FinTS/HBCI libraries, and licensed PSD2 providers.
-- [ ] Verify regional Sparkasse compatibility, authentication/TAN flows, service terms, and costs.
-- [ ] Never automate browser login or store online banking credentials.
-- [ ] Write an ADR and privacy review before implementing.
+- [x] Compare continued manual CSV, FinTS/HBCI libraries, and licensed PSD2 providers.
+- [x] Document regional compatibility, authentication/TAN, service-term, and cost verification requirements.
+- [x] Never automate browser login or store online banking credentials.
+- [x] Write separate proposals, an ADR, and privacy boundaries before implementing.
 
 Exit: no automated sync is enabled without a clear consent/security/cost decision.
 
@@ -112,9 +112,9 @@ Status: IN PROGRESS
 - [x] SQLite online backup and separate-file integrity restore verified.
 - [x] Hardened systemd unit and dedicated user provisioned on the target Pi.
 - [x] Health/status command with no financial details.
-- [ ] Disk-space monitoring and graceful read-only failure when storage is low.
+- [x] Disk-space monitoring and graceful read-only failure when storage is low.
 - [ ] Dependency review and reproducible environment.
 - [x] Pi reboot/restart smoke test.
-- [ ] Privacy/security release checklist.
+- [x] Privacy/security release checklist documented; owner-only checks remain explicitly marked.
 
-Exit: owner can deploy, recover, update, back up, restore, and delete local data without developer intervention. Encrypted off-device backup, disk-space handling, and the final privacy/security release checklist remain.
+Exit: owner can deploy, recover, update, back up, restore, and delete local data without developer intervention. Encrypted off-device backup and owner-only release checks remain.
