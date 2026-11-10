@@ -75,7 +75,7 @@ This description contains aggregate format observations only. The real CSV is no
 - Transient source references may be used to calculate a digest for duplicate detection; do not persist the raw reference.
 - Scrub obvious IBAN and card-number patterns from memo/counterparty text before persistence.
 - Do not keep the original CSV in the app data directory after import unless the owner separately chooses a secure archival policy.
-- Do not upload CSV exports to Telegram in MVP.
+- CSV exports may be uploaded only from the configured allowlisted private Telegram chat. The file is size-limited, processed in temporary local storage, and deleted after processing; the bot returns aggregates only.
 
 ## Required tests before changing this adapter
 

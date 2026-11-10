@@ -9,7 +9,7 @@ This checklist is for the repository owner, not the coding agent. Complete it be
 - [ ] Enable GitHub secret scanning and push protection if available.
 - [ ] Require CI to pass before merging changes.
 - [ ] Protect `main` from direct pushes once development starts.
-- [ ] Never upload bank exports, database files, logs, screenshots, or `.env`.
+- [ ] Never upload database files, logs, screenshots, credentials, or `.env`.
 
 From the extracted project directory, the GitHub CLI route is:
 
@@ -40,7 +40,7 @@ Review `git status` and `git diff --cached --stat` before the first push. Do not
 - [ ] Set `TELEGRAM_ALLOWED_USER_IDS` to that numeric ID.
 - [ ] Verify the bot responds only to the owner in a private chat.
 - [ ] Confirm no webhook is active for this bot. If it was previously connected to Telegram Serverless, disable that integration and remove the old webhook before starting long polling.
-- [ ] Keep document uploads and group access disabled.
+- [x] Document uploads accept only CSV files in the allowlisted private chat; group access remains disabled.
 
 ## 4. Local import
 
@@ -67,7 +67,7 @@ Review `git status` and `git diff --cached --stat` before the first push. Do not
 - Account alias: `primary` is the default non-sensitive label.
 - Backup cadence and off-device destination.
 - Whether Telegram responses may include merchant names or only aggregate totals.
-- Whether the owner ever wants to enable statement upload through Telegram (default: no).
+- [x] Owner approved private CSV statement upload with temporary local processing and aggregate-only replies.
 - Whether to investigate FinTS/PSD2 bank synchronisation (default: manual export).
 - Whether to investigate optional AI features (default: off).
 - Repository license (default: no license granted; private repository).

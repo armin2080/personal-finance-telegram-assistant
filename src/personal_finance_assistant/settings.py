@@ -17,6 +17,7 @@ class Settings:
     user_timezone: str
     log_level: str
     minimum_free_bytes: int = 100 * 1024 * 1024
+    max_upload_bytes: int = 10 * 1024 * 1024
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -49,4 +50,5 @@ class Settings:
             user_timezone=os.getenv("FPA_USER_TIMEZONE", "Europe/Berlin"),
             log_level=os.getenv("FPA_LOG_LEVEL", "INFO").upper(),
             minimum_free_bytes=int(os.getenv("FPA_MIN_FREE_BYTES", "104857600")),
+            max_upload_bytes=int(os.getenv("FPA_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024))),
         )

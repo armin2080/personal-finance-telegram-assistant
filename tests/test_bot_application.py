@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,8 @@ from personal_finance_assistant.bot.application import (
     _is_authorized,
     _report_text,
     _settings,
+    _validate_upload_metadata,
+    document_upload,
 )
 from personal_finance_assistant.domain import CategoryTotal, PeriodReport
 from personal_finance_assistant.settings import Settings
@@ -67,3 +70,79 @@ def test_settings_helper_rejects_missing_context_key() -> None:
 def test_currency_formatting_is_minor_unit_safe() -> None:
     assert _format_eur(123456) == "1.234,56 €"
     assert _format_eur(-9) == "-0,09 €"
+
+
+def test_upload_metadata_accepts_only_small_csv_documents() -> None:
+    assert _validate_upload_metadata("statement.CSV", 100) is None
+    assert _validate_upload_metadata("statement.pdf", 100) is not None
+    assert _validate_upload_metadata("statement.csv", 101, max_upload_bytes=100) is not None
+    assert _validate_upload_metadata(None, 100) is not None
+
+
+def test_document_upload_rejects_non_csv_without_downloading(tmp_path: Path) -> None:
+    replies: list[str] = []
+
+    async def reply_text(text: str) -> None:
+        replies.append(text)
+
+    message = SimpleNamespace(
+        document=SimpleNamespace(file_name="statement.pdf", file_size=100),
+        reply_text=reply_text,
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_message=message,
+    )
+    settings = _settings_for(frozenset({123}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"settings": settings}))
+
+    asyncio.run(document_upload(update, context))
+
+    assert replies == ["Only CSV bank exports are accepted."]
+
+
+def test_document_upload_processes_csv_and_returns_aggregates(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "sparkasse_sample.csv"
+    database_path = tmp_path / "finance.sqlite3"
+    replies: list[str] = []
+
+    async def reply_text(text: str) -> None:
+        replies.append(text)
+
+    async def download_to_drive(*, custom_path: Path) -> None:
+        custom_path.write_bytes(fixture.read_bytes())
+
+    async def get_file():
+        return SimpleNamespace(download_to_drive=download_to_drive)
+
+    message = SimpleNamespace(
+        document=SimpleNamespace(
+            file_name="private-statement.csv",
+            file_size=fixture.stat().st_size,
+            get_file=get_file,
+        ),
+        reply_text=reply_text,
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_message=message,
+    )
+    settings = Settings(
+        None,
+        frozenset({123}),
+        database_path,
+        "Europe/Berlin",
+        "INFO",
+        minimum_free_bytes=0,
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"settings": settings}))
+
+    asyncio.run(document_upload(update, context))
+
+    assert len(replies) == 1
+    assert "CSV processed locally." in replies[0]
+    assert "Rows: 5" in replies[0]
+    assert "private-statement.csv" not in replies[0]
+    assert "CARD" not in replies[0]

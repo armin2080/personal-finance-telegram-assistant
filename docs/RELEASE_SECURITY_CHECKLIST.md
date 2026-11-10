@@ -3,7 +3,7 @@
 - [x] Repository excludes real exports, databases, backups, and secrets.
 - [x] Synthetic parser and privacy tests pass.
 - [x] Telegram uses private numeric allowlisting and outbound long polling.
-- [x] Statement uploads and group access remain disabled.
+- [x] CSV uploads are private-chat-only, size-limited, temporary, and aggregate-only; group access remains disabled.
 - [x] Service uses a dedicated unprivileged account and systemd hardening.
 - [x] SQLite backup and separate-file integrity restore were verified.
 - [x] Explicit local purge path is documented.

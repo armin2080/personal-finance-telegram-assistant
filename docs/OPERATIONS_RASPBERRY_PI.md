@@ -61,7 +61,7 @@ For development checks, install `.[dev]` on a development machine; keep test/lin
 4. Review the preview locally.
 5. Run `finance-assistant import FILE --commit`.
 6. Remove the original export from the temporary directory according to the owner's retention policy.
-7. Do not upload the file to Telegram or GitHub.
+7. Do not upload the file to GitHub. Telegram CSV uploads are supported only in the configured private allowlisted chat and are deleted after temporary local processing.
 
 ## systemd
 

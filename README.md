@@ -104,7 +104,7 @@ not an external AI integration.
 3. Set `TELEGRAM_ALLOWED_USER_IDS` to your numeric Telegram user ID. Never leave it empty.
 4. Start with `finance-assistant bot`.
 
-The bot accepts private chats from the allowlisted user ID only. It does not accept statement uploads in the MVP. Import files locally through the CLI. Telegram messages and replies are processed by Telegram, so do not send passwords, PINs, TANs, full IBANs, or raw bank exports to the bot.
+The bot accepts private chats from the allowlisted user ID only. It accepts supported CSV statement documents only in that private chat, processes them temporarily on the device, and returns aggregate results. Telegram messages and replies are processed by Telegram, so do not send passwords, PINs, TANs, full IBANs, or other raw credentials to the bot.
 
 ## Creating the private GitHub repository
 

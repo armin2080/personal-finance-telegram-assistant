@@ -21,7 +21,7 @@ The existing parser and synthetic fixture document the observed format. Extend t
 - One lightweight process managed by systemd.
 - SQLite; no separate DB service.
 - Telegram Bot API with outbound long polling; no webhook/public listener.
-- Local CLI import; Telegram statement upload remains disabled.
+- Local CLI import remains supported; Telegram accepts only the approved private CSV upload flow.
 - Application/domain logic stays independent of Telegram handlers.
 - No external AI, analytics SaaS, bank-sync API, or online banking credential handling in MVP.
 

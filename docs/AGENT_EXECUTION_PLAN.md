@@ -102,7 +102,7 @@ Tasks:
 3. Add callback buttons with short-lived, owner-bound callback payloads; validate every callback.
 4. Add pagination and conservative result limits.
 5. Add user-friendly error handling with safe error IDs; detailed stack traces remain local only.
-6. Keep group chats, inline mode, and document upload disabled.
+6. Keep group chats and inline mode disabled; document uploads are limited to the approved private CSV flow.
 
 Acceptance:
 - Tests cover authorized user, unknown user, malformed user ID, group chat, callback replay, and command error.

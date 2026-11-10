@@ -39,7 +39,10 @@ This product handles highly sensitive personal financial activity. Treat the dat
 - Only private chats are accepted. Group chats and all non-allowlisted users are ignored.
 - An empty allowlist is a startup error.
 - Long polling only; no public webhook/listener in the MVP.
-- Statement upload is disabled. Local CLI is the supported import path.
+- CSV statement upload is limited to the allowlisted private chat, a 10 MiB
+  configurable limit, temporary local processing, and aggregate-only replies.
+  The source file is deleted after processing; non-CSV documents, groups, and
+  non-allowlisted users are rejected.
 - Commands return concise summaries, not full transaction histories by default.
 - Do not treat Telegram as an encrypted private storage system. Bot messages are handled by Telegram's cloud Bot API.
 
@@ -63,9 +66,9 @@ This product handles highly sensitive personal financial activity. Treat the dat
 
 ## Data lifecycle
 
-1. **Collection:** user manually exports booked transactions and transfers the file to the Pi locally.
-2. **Processing:** parser reads rows in memory; bank identifiers are ignored; obvious identifiers in memo/counterparty fields are scrubbed.
-3. **Persistence:** only canonicalised transaction data, import metadata, and derived digests are stored in SQLite.
+1. **Collection:** user exports booked transactions and sends a supported CSV in the allowlisted private chat or transfers it locally to the Pi.
+2. **Processing:** uploaded files are downloaded into a `0700` temporary directory, parser reads rows in memory, bank identifiers are ignored, and obvious identifiers in memo/counterparty fields are scrubbed.
+3. **Persistence:** only canonicalised transaction data, import metadata, and derived digests are stored in SQLite; the uploaded source is deleted in a `finally` cleanup block.
 4. **Use:** local analytics and concise Telegram summaries.
 5. **Backup:** consistent SQLite backup; encrypted before off-device storage.
 6. **Deletion:** use the user-confirmed local purge command after creating any required backup. This removes the application database and SQLite sidecars; backups under app control must be handled separately. A secure deletion promise cannot be made for SD-card wear-levelled storage.
