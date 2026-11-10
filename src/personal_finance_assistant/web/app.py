@@ -10,7 +10,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from personal_finance_assistant.categories import CATEGORY_REGISTRY
-from personal_finance_assistant.services.analytics import get_financial_overview
+from personal_finance_assistant.services.analytics import (
+    get_financial_overview,
+    merchant_expenses,
+    weekly_trend,
+)
 from personal_finance_assistant.services.budgets import (
     find_recurring_candidates,
     list_budget_statuses,
@@ -183,6 +187,53 @@ def create_app(database_path: str | Path) -> FastAPI:
                     "month": item.month,
                     "expenses": _money(item.expenses_minor),
                     "income": _money(item.income_minor),
+                }
+                for item in result
+            ]
+        }
+
+    @app.get("/api/weekly-trends")
+    def weekly_trends(start: str, end: str) -> dict[str, object]:
+        try:
+            result = weekly_trend(
+                database_path,
+                _parse_date(start, "start"),
+                _parse_date(end, "end"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "weeks": [
+                {
+                    "start": item.week_start,
+                    "expenses": _money(item.expenses_minor),
+                    "income": _money(item.income_minor),
+                }
+                for item in result
+            ]
+        }
+
+    @app.get("/api/merchants")
+    def merchants(
+        start: str,
+        end: str,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        try:
+            result = merchant_expenses(
+                database_path,
+                _parse_date(start, "start"),
+                _parse_date(end, "end"),
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "merchants": [
+                {
+                    "merchant": item.merchant,
+                    "amount": _money(item.amount_minor),
+                    "transaction_count": item.transaction_count,
                 }
                 for item in result
             ]

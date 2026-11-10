@@ -87,3 +87,29 @@ def test_dashboard_supporting_sections_return_safe_empty_shapes(tmp_path: Path) 
     assert budgets.json()["budgets"] == []
     assert recurring.status_code == 200
     assert recurring.json()["candidates"] == []
+
+
+def test_dashboard_exposes_merchant_and_weekly_analytics(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    Database(database_path).import_file(parse_sparkasse_csv(FIXTURE))
+    client = TestClient(create_app(database_path))
+
+    merchants = client.get(
+        "/api/merchants",
+        params={"start": "2026-03-01", "end": "2026-04-01"},
+    )
+    weeks = client.get(
+        "/api/weekly-trends",
+        params={"start": "2026-03-01", "end": "2026-04-01"},
+    )
+
+    assert merchants.status_code == 200
+    assert merchants.json()["merchants"][0]["amount"] == {
+        "minor": 1704,
+        "currency": "EUR",
+    }
+    assert weeks.status_code == 200
+    assert weeks.json()["weeks"][0]["expenses"] == {
+        "minor": 2823,
+        "currency": "EUR",
+    }

@@ -21,6 +21,7 @@ from personal_finance_assistant.domain import (
     ImportResult,
     LedgerReconciliation,
     MerchantResolution,
+    MerchantTotal,
     MonthlyTrend,
     ParsedTransaction,
     ParseResult,
@@ -28,6 +29,7 @@ from personal_finance_assistant.domain import (
     RecurringCandidate,
     ReviewCandidate,
     TransactionRecord,
+    WeeklyTrend,
 )
 from personal_finance_assistant.ingestion.classification import classify_transaction
 
@@ -906,6 +908,67 @@ class Database:
                 CategoryTotal(key, amount) for key, amount in sorted(expenses.items())
             ),
             transaction_count=len(rows),
+        )
+
+    def merchant_expenses(
+        self,
+        start: date,
+        end: date,
+        *,
+        limit: int = 20,
+    ) -> tuple[MerchantTotal, ...]:
+        """Return the largest classified expense merchants in a period."""
+
+        if end <= start or limit < 1 or limit > 100:
+            raise ValueError("invalid merchant query bounds")
+        self.initialize()
+        with self.session() as connection:
+            rows = connection.execute(
+                """SELECT merchant_candidate, ABS(amount_minor) AS amount_minor, id
+                   FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                     AND classification = 'expense_candidate'
+                     AND amount_minor < 0
+                   ORDER BY booking_date, id""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        totals: dict[str, list[int]] = {}
+        for row in rows:
+            merchant = row["merchant_candidate"] or "Unresolved merchant"
+            bucket = totals.setdefault(merchant, [0, 0])
+            bucket[0] += int(row["amount_minor"])
+            bucket[1] += 1
+        ranked = sorted(totals.items(), key=lambda item: (-item[1][0], item[0]))
+        return tuple(
+            MerchantTotal(merchant, values[0], values[1]) for merchant, values in ranked[:limit]
+        )
+
+    def weekly_trend(self, start: date, end: date) -> tuple[WeeklyTrend, ...]:
+        """Return Monday-based weekly totals for a half-open date period."""
+
+        if end <= start:
+            raise ValueError("trend end date must be after start date")
+        self.initialize()
+        with self.session() as connection:
+            rows = connection.execute(
+                """SELECT booking_date, amount_minor, classification
+                   FROM transactions
+                   WHERE booking_date >= ? AND booking_date < ?
+                   ORDER BY booking_date, id""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        totals: dict[date, list[int]] = {}
+        for row in rows:
+            booking_date = date.fromisoformat(row["booking_date"])
+            week_start = booking_date.fromordinal(booking_date.toordinal() - booking_date.weekday())
+            bucket = totals.setdefault(week_start, [0, 0])
+            amount = int(row["amount_minor"])
+            if row["classification"] == "expense_candidate" and amount < 0:
+                bucket[0] += -amount
+            elif row["classification"] == "income_candidate" and amount > 0:
+                bucket[1] += amount
+        return tuple(
+            WeeklyTrend(week, values[0], values[1]) for week, values in sorted(totals.items())
         )
 
     def financial_overview(

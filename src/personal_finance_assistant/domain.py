@@ -237,6 +237,20 @@ class MonthlyTrend:
 
 
 @dataclass(frozen=True, slots=True)
+class MerchantTotal:
+    merchant: str
+    amount_minor: int
+    transaction_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class WeeklyTrend:
+    week_start: date
+    expenses_minor: int
+    income_minor: int
+
+
+@dataclass(frozen=True, slots=True)
 class CashFlowForecast:
     month: str
     as_of: date

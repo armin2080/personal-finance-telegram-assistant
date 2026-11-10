@@ -7,7 +7,13 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from personal_finance_assistant.domain import FinancialOverview, LedgerReconciliation, PeriodReport
+from personal_finance_assistant.domain import (
+    FinancialOverview,
+    LedgerReconciliation,
+    MerchantTotal,
+    PeriodReport,
+    WeeklyTrend,
+)
 from personal_finance_assistant.storage.sqlite import Database
 
 
@@ -54,6 +60,28 @@ def get_month_report(database_path: str | Path, year: int, month: int) -> Period
     start = date(year, month, 1)
     end = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
     return get_period_report(database_path, start, end)
+
+
+def merchant_expenses(
+    database_path: str | Path,
+    start: date,
+    end: date,
+    *,
+    limit: int = 20,
+) -> tuple[MerchantTotal, ...]:
+    """Return bounded merchant expense totals for a selected period."""
+
+    return Database(database_path).merchant_expenses(start, end, limit=limit)
+
+
+def weekly_trend(
+    database_path: str | Path,
+    start: date,
+    end: date,
+) -> tuple[WeeklyTrend, ...]:
+    """Return exact Monday-based weekly income and expense totals."""
+
+    return Database(database_path).weekly_trend(start, end)
 
 
 def get_current_month_summary(

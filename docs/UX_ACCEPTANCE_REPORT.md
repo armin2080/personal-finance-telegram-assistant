@@ -12,6 +12,7 @@
 - Data-quality/review-needed badge.
 - Category breakdown bars.
 - Six-month income/expense trend bars.
+- Merchant ranking and weekly trend API data.
 - Budget remaining/usage section.
 - Recurring-payment candidate section.
 - Evidence-backed insight section.

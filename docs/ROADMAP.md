@@ -104,6 +104,7 @@ Status: **IN PROGRESS**
 - [x] Expand movement types, payment channels, review state, and exact splits.
 - [x] Add overview, trends, budgets, recurring, insights, and transaction API
   sections.
+- [x] Add merchant rankings and weekly trend API data.
 - [x] Add responsive local dashboard and local development command.
 - [x] Add Telegram upload preview/confirmation flow.
 - [ ] Add independent 12-month oracle and end-to-end acceptance journeys.
