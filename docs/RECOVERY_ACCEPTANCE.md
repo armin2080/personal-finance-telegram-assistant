@@ -132,3 +132,24 @@ python artifacts/qa/20261110-1727/scripts/test_financial_accuracy_and_categorisa
 python artifacts/qa/20261110-1727/scripts/test_import_experience.py
 python artifacts/qa/20261110-1727/scripts/test_telegram_simulation.py
 ```
+
+## Defect-by-defect recovery record
+
+| Defect | Reproduced | Root cause | Code change | Regression test | Actual result |
+|---|---|---|---|---|---|
+| DEF-01 coffee/fee | yes | substring `"fee"` matched `"coffee"` | token-aware fee evidence, consumer context, compound German fee terms | `test_coffee_purchases_are_never_bank_fees`, `test_explicit_bank_fees_are_recognised` | coffee is `food.coffee`; fees remain `financial.fees` |
+| DEF-02 uncategorised | yes | empty consumer rule baseline | deterministic merchant/descriptor rules and merchant normalisation | `test_consumer_categories_are_assigned_conservatively` | 100% category accuracy on QA fixture |
+| DEF-02A totals | yes | budgets ignored unallocated spending | split-aware totals + `BudgetStatus.complete` + disclosure | `test_uncategorised_spending_remains_in_total_and_budget_is_incomplete` | totals include it; budget marked incomplete |
+| DEF-03 duplicate lockout | yes (identical-row case) | file hash recorded as permanently completed while possible duplicates were skipped | `pending`/`incomplete`/`completed` batch lifecycle and append-on-accept | `test_possible_duplicate_import_can_be_resumed_and_accepted` | first run inserts 1/possible 1; accept appends the second row |
+| DEF-04 v4 migration | yes | v4 excluded from allowed versions; implicit DDL commit | allowed set includes 4; explicit `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` | `test_schema_v4_database_upgrades_to_current`, `test_failed_migration_rolls_back_and_can_be_retried`, `test_schema_v4_upgrade_preserves_existing_rows` | v4→v6 and retry succeed; failure leaves v5 intact |
+| DEF-05 splits/undo | yes | reports ignored split table; undo deleted parent first | `transaction_flows` view; delete splits before parents; FK check | `test_splits_are_used_by_period_reports_and_budgets`, `test_import_undo_handles_splits_and_foreign_keys`, `test_import_undo_preserves_other_import_batches` | split totals exact; FK/integrity clean |
+| DEF-06 missing controls | yes | no management endpoints/commands | review, merchant, rule, budget, split, link, note, undo across web/CLI/bot | `test_dashboard_management_endpoints`, `test_user_correction_outranks_rules_and_notes_persist`, `test_merchant_alias_default_category_and_merge`, `test_rule_conditions_are_structured_and_safe` | owner can correct and manage data |
+| DEF-07 `/ask` | yes | exact substring checks | structured intent/entity parser and deterministic answers | `test_questions_are_structured_and_helpful` | all 17 QA questions answer or clarify usefully |
+| DEF-08 timezone | yes | `toISOString()` local→UTC shift | local date components + latest-data default | `test_dashboard_date_defaults_do_not_use_utc_conversion` | date inputs keep selected month |
+| DEF-09 health | yes | no `/api/health` call | health fetch renders transaction count/schema | dashboard browser smoke test | header resolves |
+| DEF-10 raw JSON | yes | error text printed raw | JSON `detail` extraction and clean banner | browser error-state smoke test | "Start date must be before end date." |
+| DEF-11 mobile table | yes | fixed six-column table | mobile card layout with amounts/categories/confidence | mobile browser smoke test | amount visible at 390 px |
+| DEF-12 static charts | yes | no values/axes/handlers | interactive SVG bar/column charts with tooltips, legends, keyboard and drill-down | browser interaction smoke test | category click filters transactions; month click changes period |
+| DEF-13 reconciliation | yes | fees/reversals/cash absent | expanded reconciliation fields | `test_unlinked_reversal_is_excluded_from_net_flow_but_reconciled` | debits/credits reconcile to zero unexplained |
+| DEF-14 empty badge | yes | quality computed as reviewed with zero rows | `no_data` quality state | dashboard browser smoke test | empty period shows "No data" |
+| DEF-15 recurrence noise | yes | no cadence/category limits | monthly-to-quarterly cadence, gap handling, amount regimes, relevant categories | `test_recurring_candidates_require_three_stable_observations` + QA output | 122–182 day sporadics excluded; subscriptions and price change found |
