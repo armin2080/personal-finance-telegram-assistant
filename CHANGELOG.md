@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.0 — Recovery release
+
+- Restored oracle-exact financial totals: coffee is no longer a bank fee,
+  consumer categories are deterministic, and uncategorised spending stays in
+  total expenditure.
+- Added split-aware reporting through the `transaction_flows` view; budgets,
+  merchant rankings, trends, forecasts and reconciliation now respect splits.
+- Defined reversal/refund arithmetic and linked-offset behaviour; unlinked
+  reversals remain outside net cash flow and visible in reconciliation.
+- Made possible-duplicate imports resumable (`incomplete` → append on explicit
+  acceptance) while preserving exact-file idempotency.
+- Made schema upgrades atomic and added v4/v5→v6 migration coverage, including
+  failure rollback and retry.
+- Made import undo split-safe and foreign-key clean.
+- Added transaction review/correction/note/split/link/undo controls, merchant
+  entities and aliases, structured rules, and learn-from-correction.
+- Added budget CRUD, pace/projection, alert thresholds and explicit uncategorised
+  spending disclosure.
+- Replaced the `/ask` substring matcher with a structured intent/entity parser
+  covering spending, income, categories, merchants, dates, comparisons, budgets,
+  savings, recurring payments and price changes.
+- Rebuilt the dashboard with nine navigable sections, interactive SVG charts,
+  URL state, click drill-down, mobile transaction cards, health status and clean
+  error/empty/loading states.
+- Added insight coverage for largest categories, changes, merchant
+  concentration, unusual one-offs, income changes, fixed/discretionary spending,
+  budget pace and recurring price changes.
+- Added 43 recovery regression tests (125 total) and documented the recovery
+  baseline, semantics, rules and acceptance evidence.
+
 ## 0.1.0 — Initial project foundation
 
 - Defined local-first Python, SQLite, Raspberry Pi, and Telegram long-polling architecture.

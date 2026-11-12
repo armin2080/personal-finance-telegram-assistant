@@ -34,13 +34,31 @@
 | `category_source` | `unreviewed`, `rule`, or `user`. |
 | `category_confidence` | 0.0–1.0; no confidence is implied for unreviewed rows. |
 | `review_status` | `needs_review`, `confirmed`, or `dismissed`. |
+| `note` | Optional owner note, stored locally. |
+| `evidence` | Human-readable rule/evidence marker for the current label. |
 | `dedupe_key` | Digest used to compare imports; not source reference itself. |
 | `dedupe_basis` | `reference` or `content`. |
 | `created_at` | UTC timestamp. |
 
 Split allocations are stored separately and must reconcile exactly to the
 original signed amount. A split is never accepted when its allocations do not
-sum to the source transaction.
+sum to the source transaction. The `transaction_flows` view expands split
+parents for reporting; all analytics read it.
+
+Linked refunds/reversals are stored in `transaction_links`. An unlinked reversal
+is excluded from net cash flow and shown in reconciliation. A linked
+refund/reversal offsets the linked original expense (capped at the original
+amount) and is not counted a second time.
+
+`imports.status` records `pending`, `incomplete` (possible duplicates awaiting a
+decision), or `completed`. Re-running the same file with
+`--accept-possible-duplicates` appends the skipped rows to the same batch;
+byte-identical files remain a no-op.
+
+Merchant entities carry an optional `default_category_key`. Classification rules
+optionally carry `merchant_pattern`, `descriptor_pattern`, `payment_channel`,
+`direction`, `payment_type`, `enabled` and `label` in addition to the primary
+pattern, confidence, priority and version.
 
 ## Separate concepts
 
@@ -59,17 +77,23 @@ counterparty described in the payment purpose.
 
 ## Classification policy
 
-Initial rules are deliberately cautious:
+Rules are deliberately cautious:
 
 - Payroll label (`LOHN`, `GEHALT`, `SALARY`) can be an income candidate.
-- Transfer-labelled booking text becomes `transfer_candidate` and is excluded from ordinary spend/income totals until reviewed.
-- Other negative rows are expense candidates, but category remains unreviewed.
-- Other positive rows are income candidates, but could be refunds or transfers; a later review step must resolve ambiguous cases.
+- Own-account transfer evidence becomes `transfer_candidate` and is excluded from ordinary spend/income totals.
+- A bank transfer to a known merchant category remains ordinary expense/income.
+- Other negative rows are expense candidates. A deterministic merchant or
+  descriptor rule may assign a category; otherwise the row stays uncategorised
+  and needs review.
+- Other positive rows are income candidates. Generic credits become
+  `income.other` with low confidence and need review; they are never labelled
+  salary.
+- Fee detection is token-aware and consumer-context-aware; `coffee` is not a fee.
+- Reversal markers are checked before refunds, so a reversal is not counted as a
+  refund.
 
 Refund markers such as `refund`, `Rückerstattung`, `Retoure`, or `Erstattung`
-may produce `refund_candidate` only for positive credits. Generic positive
-credits remain income candidates with an uncategorised category; they are never
-automatically labelled salary.
+may produce `refund_candidate` only for positive credits.
 
 ## Suggested category taxonomy
 
@@ -95,9 +119,11 @@ identifiers and labels are presentation values.
 
 1. Explicit transaction-level user correction.
 2. Explicit user-created merchant/category rule.
-3. High-confidence deterministic mapping.
-4. Low-confidence candidate, requiring review.
-5. Uncategorised/unknown.
+3. Confirmed merchant alias / alias default category.
+4. High-confidence deterministic merchant mapping.
+5. Conservative descriptor rule.
+6. Weak evidence or domain-only candidate, requiring review.
+7. Uncategorised/unknown.
 
 Confirmed corrections are marked `review_status = confirmed`; automatic or
 ambiguous suggestions remain reviewable. Dismissal is explicit and does not
@@ -114,7 +140,11 @@ only exact normalised candidates. A transaction-level user correction is stored
 with its provenance and always outranks later alias changes. The original
 scrubbed counterparty and description remain available for local review.
 
-Budgets use only `expense_candidate` transactions with negative amounts and an
-exact category key in the selected booking month. Recurring candidates require
-at least three observations with stable merchant and amount evidence; they are
-not subscriptions until the owner confirms them.
+Budgets use only split-aware negative `expense_candidate` flows with an exact
+category key in the selected booking month. A budget report discloses
+uncategorised expenditure in the month and marks the category status incomplete;
+it must never show a false zero simply because classification failed. Recurring
+candidates require at least three observations with plausible monthly-to-quarterly
+cadence, stable amounts (or one detected price change), and a relevant category;
+they are not subscriptions until the owner confirms them. Sporadic multi-month
+purchases and grocery/restaurant shopping are rejected.

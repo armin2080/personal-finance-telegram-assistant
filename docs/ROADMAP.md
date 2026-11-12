@@ -83,7 +83,7 @@ Exit: all detected recurring items are explainable and labelled as candidates un
 
 ## M6 — Insights, forecasts, and cockpit foundation
 
-Status: **IN PROGRESS**
+Status: **DONE**
 
 - [x] Trend and anomaly detection with transparent baselines.
 - [x] Savings/budget review prompts based only on the user's data and budgets.
@@ -92,13 +92,13 @@ Status: **IN PROGRESS**
 - [x] External LLM remains disabled pending explicit owner approval, data minimisation, provider review, and a kill switch.
 - [x] Add a loopback-only dashboard/API over the existing application services.
 - [x] Add structured deterministic insights with evidence transaction IDs.
-- [ ] Complete review actions, category management, and full dashboard navigation.
+- [x] Complete review actions, category management, and full dashboard navigation.
 
 Exit: no unsupported advice, unexplained forecasts, or external data egress.
 
 ## M6.1 — Personal Finance Cockpit extension
 
-Status: **IN PROGRESS**
+Status: **DONE**
 
 - [x] Baseline implementation audit recorded in `docs/IMPROVEMENT_AUDIT.md`.
 - [x] Expand movement types, payment channels, review state, and exact splits.
@@ -107,8 +107,8 @@ Status: **IN PROGRESS**
 - [x] Add merchant rankings and weekly trend API data.
 - [x] Add responsive local dashboard and local development command.
 - [x] Add Telegram upload preview/confirmation flow.
-- [ ] Add independent 12-month oracle and end-to-end acceptance journeys.
-- [ ] Add browser visual/accessibility inspection.
+- [x] Add independent 12-month oracle and end-to-end acceptance journeys.
+- [x] Add browser visual/accessibility inspection.
 
 The dashboard remains loopback-only until a separate authentication and
 threat-model decision approves any remote or Mini App exposure.
@@ -133,8 +133,26 @@ Status: IN PROGRESS
 - [x] Hardened systemd unit and dedicated user provisioned on the target Pi.
 - [x] Health/status command with no financial details.
 - [x] Disk-space monitoring and graceful read-only failure when storage is low.
-- [ ] Dependency review and reproducible environment.
+- [x] Dependency review and reproducible environment.
 - [x] Pi reboot/restart smoke test.
 - [x] Privacy/security release checklist documented; owner-only checks remain explicitly marked.
 
 Exit: owner can deploy, recover, update, back up, restore, and delete local data without developer intervention. Encrypted off-device backup and owner-only release checks remain.
+
+
+## M9 — Independent QA recovery
+
+Status: **DONE — awaiting independent re-assessment**
+
+- [x] Reproduce DEF-01 to DEF-15 and record `docs/RECOVERY_BASELINE.md`.
+- [x] Restore oracle-exact financial totals, reversal handling and split aggregation.
+- [x] Repair duplicate-import lifecycle, atomic migrations and split-safe undo.
+- [x] Implement transaction review, merchant management, rules and learning.
+- [x] Implement budget management with uncategorised-spending disclosure.
+- [x] Implement structured financial questions.
+- [x] Rebuild the cockpit with navigation, interactive charts and mobile cards.
+- [x] Improve insights and conservative recurrence/price-change detection.
+- [x] Add recovery regression coverage and `docs/RECOVERY_ACCEPTANCE.md`.
+- [ ] Independent QA repeat (not performed by the implementing agent).
+
+Exit: independent QA scores at least 85/100 with no unresolved P0/P1 defects.

@@ -72,12 +72,32 @@ Inspect persisted import batches or undo one after review:
 
 ```bash
 finance-assistant imports
-finance-assistant review
+finance-assistant review --details
 finance-assistant status
 finance-assistant undo-import IMPORT_ID --yes
 ```
 
-Undo is transactional and refuses batches with recorded transaction corrections.
+If a commit skipped possible duplicates, the batch is marked `incomplete`.
+Re-run the same file with `--accept-possible-duplicates` to append the skipped
+rows to the same batch. Byte-identical files remain a no-op. Undo is
+transactional, removes split children safely, and refuses batches with recorded
+transaction corrections.
+
+Review and manage the owner's data:
+
+```bash
+finance-assistant budget set food.groceries 15000 --month 2026-10
+finance-assistant budget list --month 2026-10
+finance-assistant correct TRANSACTION_ID --category food.groceries \
+  --classification expense_candidate --merchant "Supermarkt Mitte" --note "checked"
+finance-assistant split TRANSACTION_ID -2000:food.groceries -1675:housing.household
+finance-assistant rule add --merchant-pattern "Supermarkt Mitte" \
+  --category food.groceries --classification expense_candidate --priority 200
+finance-assistant merchant list
+finance-assistant merchant alias --alias "SUPERMARKT-MITTE" --canonical "Supermarkt Mitte"
+finance-assistant ask "How much did I spend on groceries last month?" --month 2026-10
+finance-assistant integrity
+```
 `finance-assistant purge --yes` permanently deletes the local SQLite database and
 its SQLite sidecars; create and verify a backup first.
 
@@ -95,16 +115,22 @@ Run the local dashboard (loopback only):
 finance-assistant web
 ```
 
-Open `http://127.0.0.1:8000/`. The dashboard uses the configured local SQLite
-database and exposes no public listener by default.
+Open `http://127.0.0.1:8000/`. The cockpit has Overview, Analytics, Budgets,
+Transactions, Review, Merchants & rules, Insights, Ask and Settings sections.
+Charts are interactive: clicking a category or merchant opens the matching
+transactions, clicking a month changes the period, and insight clicks open the
+supporting rows. The dashboard uses the configured local SQLite database and
+exposes no public listener by default.
 
 ## Telegram commands
 
-The private bot supports `/summary`, `/spending`, `/income`, `/compare`, `/review`,
-`/budget CATEGORY`, `/subscriptions`, `/trend`, `/forecast`, and `/ask QUESTION`.
-Budget, insight, and recurring-payment output is aggregate-only; repeated payments
-remain unconfirmed candidates. `/ask` is a small local allowlisted query surface,
-not an external AI integration.
+The private bot supports `/summary`, `/spending`, `/income`, `/compare`, `/review`
+(with inline confirm/dismiss actions), `/budget CATEGORY`, `/budget set`,
+`/budget delete`, `/budget list`, `/subscriptions`, `/trend`, `/forecast`,
+`/ask QUESTION`, `/correct`, `/rules`, and `/merchants`. Budget, insight, and
+recurring-payment output is aggregate-only; repeated payments remain unconfirmed
+candidates. `/ask` uses a deterministic intent/entity parser over approved local
+analytics, not an external AI integration.
 
 ## Telegram setup
 
@@ -128,7 +154,9 @@ src/personal_finance_assistant/   Application code
   ingestion/                      Sparkasse CSV parser and merchant extraction
   storage/                        SQLite persistence
   bot/                            Telegram transport adapter
-  cli.py                          Local import / inspect / backup commands
+  cli.py                          Import, review, budget, rule and question commands
+  web/                            Loopback cockpit API and static presentation
+  services/                       Analytics, budgets, insights, questions, management
 tests/                            Synthetic fixtures and automated tests
 docs/                             Product, architecture, privacy, import, and ops specs
 .github/                          CI, Dependabot, issue and pull-request templates

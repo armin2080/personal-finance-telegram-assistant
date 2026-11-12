@@ -54,8 +54,13 @@ Loopback web dashboard -> same application services
 ### Storage
 
 - SQLite only for the MVP.
-- Explicit schema version and migrations.
-- Transactional import batches.
+- Explicit schema version and migrations (current schema v6). Migrations run in
+  one explicit transaction and roll back completely on failure.
+- Transactional import batches with an explicit `pending`/`incomplete`/
+  `completed` lifecycle for possible-duplicate review.
+- A split-aware `transaction_flows` view expands split parents; all analytics,
+  budgets, forecasts and reconciliation read that view so a parent is never
+  double-counted.
 - Indexed queries by booking date, merchant, category, and classification.
 - Use SQLite online backup API for consistent backups.
 
@@ -63,9 +68,11 @@ Loopback web dashboard -> same application services
 
 - CLI: import, inspect, backup, database maintenance, recovery.
 - Telegram: user commands and concise results. No SQL in handlers.
-- Web dashboard: local read-only FastAPI adapter serving a responsive static
-  presentation layer. It binds to loopback by default and has no independent
-  financial calculations.
+- Web dashboard: local FastAPI adapter serving a responsive static cockpit. It
+  binds to loopback by default, exposes read and owner-management endpoints over
+  the application services, and performs no independent financial calculations.
+  The presentation uses dependency-light HTML/CSS/JS with interactive SVG charts;
+  financial values, shares and projections are computed server-side.
 - A future Telegram Mini App requires a separate authentication and threat-model
   decision; it must not be inferred from the local dashboard.
 
@@ -106,8 +113,16 @@ See `DATA_MODEL.md`. Keep source-specific metadata in the adapter, not in the do
 - Category is a separate label, e.g. `food.groceries` or `housing.rent`.
 - Exclude transfer candidates from expense/income totals until reviewed.
 - Refunds should offset only a matching category when confidently linked; otherwise show separately.
-- “Uncategorised” is a valid state.
+- “Uncategorised” is a valid state. Uncategorised spending remains in total
+  expenses and is disclosed wherever category totals or budgets are shown.
 - Every summary includes date bounds and inclusion/exclusion logic.
+- Split allocations are expanded before aggregation; the parent amount is never
+  counted again.
+- Unlinked reversals are kept outside net cash flow but shown in reconciliation.
+  Linked refunds/reversals offset the original expense instead of being counted
+  twice.
+- Net cash flow is `income + refunds − expenses − fees`. Transfers, cash
+  withdrawals, savings movements and unlinked reversals are excluded.
 
 ## Resilience and observability
 
