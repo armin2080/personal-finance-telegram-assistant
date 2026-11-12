@@ -20,7 +20,7 @@ Status values: `DONE`, `IN PROGRESS`, `BLOCKED`.
 | 6 | Intent-based questions | DONE | structured parser + deterministic answers |
 | 7 | Dashboard navigation/charts/mobile | DONE | nine sections, interactive SVG, mobile cards |
 | 8 | Insights and recurrence | DONE | concentration, one-offs, fixed/discretionary, price changes |
-| 9 | Regression coverage | DONE | 127 tests including 45 recovery tests |
+| 9 | Regression coverage | DONE | 129 tests including 47 recovery tests |
 
 ## Commit plan
 

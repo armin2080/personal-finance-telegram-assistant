@@ -1,0 +1,40 @@
+[Unit]
+Description=Personal Finance Local Cockpit (loopback only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=financebot
+Group=financebot
+WorkingDirectory=/opt/personal-finance-assistant
+Environment=PYTHONUNBUFFERED=1
+Environment=FPA_DATABASE_PATH=/var/lib/finance-assistant/finance.sqlite3
+Environment=FPA_USER_TIMEZONE=Europe/Berlin
+Environment=FPA_MIN_FREE_BYTES=104857600
+ExecStart=/opt/personal-finance-assistant/.venv/bin/finance-assistant web --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+# The cockpit is local-only. Keep it bound to 127.0.0.1 and reach it through
+# an SSH tunnel; do not expose it on a LAN or public interface without a
+# separate authentication and threat-model decision.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/finance-assistant
+StateDirectory=finance-assistant
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

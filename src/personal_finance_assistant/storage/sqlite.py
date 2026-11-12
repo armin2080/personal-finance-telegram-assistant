@@ -313,6 +313,7 @@ CREATE TABLE IF NOT EXISTS transaction_links (
 );
 CREATE INDEX IF NOT EXISTS idx_transaction_links_linked
     ON transaction_links(linked_transaction_id);
+UPDATE imports SET status = 'incomplete' WHERE possible_duplicate_count > 0;
 DROP VIEW IF EXISTS transaction_flows;
 CREATE VIEW transaction_flows AS
     SELECT t.id AS transaction_id, t.booking_date, t.amount_minor, t.classification,
@@ -1464,8 +1465,8 @@ class Database:
         with self.session() as connection:
             rows = connection.execute(
                 """SELECT id, booking_date, value_date, booking_text, description,
-                          counterparty, merchant_candidate, amount_minor, currency,
-                          dedupe_key, dedupe_basis, payment_channel
+                          counterparty, merchant_candidate, merchant_source,
+                          amount_minor, currency, dedupe_key, dedupe_basis, payment_channel
                    FROM transactions
                    WHERE classification_source != 'user' AND category_source != 'user'
                      AND review_status != 'dismissed'"""

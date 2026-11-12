@@ -799,3 +799,73 @@ def test_schema_v4_upgrade_preserves_existing_rows(tmp_path: Path) -> None:
         assert connection.execute(
             "SELECT category_key, amount_minor FROM transaction_flows"
         ).fetchone() == ("food.groceries", -1000)
+
+
+def test_reprocess_normalises_historical_merchants_but_preserves_user_labels(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    database = Database(database_path)
+    result = database.import_file(
+        _parse(
+            _tx(
+                purpose="Grocery purchase",
+                counterparty="SUPERMARKT MITTE 03",
+                amount=-1000,
+                key="normalise",
+            ),
+            _tx(
+                purpose="Restaurant meal",
+                counterparty="BISTRO-ALEX",
+                amount=-2000,
+                key="user-merchant",
+            ),
+        )
+    )
+    with database.session() as connection:
+        ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT id FROM transactions WHERE import_id = ? ORDER BY amount_minor",
+                (result.import_id,),
+            ).fetchall()
+        ]
+    database.correct_transaction_merchant(ids[0], "Owner Restaurant")
+
+    database.reprocess_classifications()
+
+    with database.session() as connection:
+        rows = {
+            row["id"]: (row["merchant_candidate"], row["merchant_source"])
+            for row in connection.execute(
+                "SELECT id, merchant_candidate, merchant_source FROM transactions"
+            ).fetchall()
+        }
+    assert rows[ids[1]] == ("Supermarkt Mitte", "deterministic")
+    assert rows[ids[0]] == ("Owner Restaurant", "user")
+
+
+def test_v5_imports_with_skipped_possible_duplicates_become_resumable(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "legacy-pending.sqlite3"
+    _legacy_v4(database_path)
+    with sqlite3.connect(database_path) as connection:
+        for statement in _split_sql(_MIGRATION_4):
+            connection.execute(statement)
+        connection.execute(
+            """INSERT INTO imports
+               (id, file_sha256, source_format, encoding, transaction_count,
+                possible_duplicate_count, created_at)
+               VALUES ('imp-pending', 'hash-pending', 'synthetic', 'utf-8', 2, 1,
+                       '2026-01-01T00:00:00+00:00')"""
+        )
+        connection.commit()
+
+    Database(database_path).initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        assert (
+            connection.execute("SELECT status FROM imports WHERE id = 'imp-pending'").fetchone()[0]
+            == "incomplete"
+        )

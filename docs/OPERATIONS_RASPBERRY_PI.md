@@ -2,7 +2,7 @@
 
 ## Target profile
 
-The initial target is a small Raspberry Pi device, potentially a Zero 2 W (512 MB RAM). The application should remain a single lightweight Python process with SQLite. Do not run an LLM, PostgreSQL, Redis, Docker engine, web dashboard, or large data-science stack on this device.
+The initial target is a small Raspberry Pi device, potentially a Zero 2 W (512 MB RAM). The application should remain a lightweight Python process with SQLite. Do not run an LLM, PostgreSQL, Redis, Docker engine, a public web dashboard, or a large data-science stack on this device. The optional cockpit binds to `127.0.0.1` only.
 
 ## Recommended topology
 
@@ -140,3 +140,136 @@ environment file. Do not start it with placeholder or missing credentials.
 The application refuses import, budget, and backup writes when free storage
 falls below `FPA_MIN_FREE_BYTES` (100 MiB by default). Read-only status/report
 operations remain available so the owner can recover space safely.
+
+
+## Updating to the recovery release (schema v6)
+
+Do this on the Pi, not against the production database from a development
+machine. Stop the bot before taking the pre-upgrade backup.
+
+```bash
+cd /opt/personal-finance-assistant
+
+# 1. Stop writes and take a pre-upgrade backup with the OLD installed code.
+sudo systemctl stop finance-assistant.service
+sudo -u financebot /opt/personal-finance-assistant/.venv/bin/finance-assistant   backup /var/backups/finance-assistant/pre-recovery-$(date +%F).sqlite3
+sudo -u financebot sqlite3 /var/backups/finance-assistant/pre-recovery-$(date +%F).sqlite3   "PRAGMA integrity_check;"
+
+# 2. Update the checkout and the installed package.
+sudo -u financebot git fetch origin
+sudo -u financebot git checkout recovery/20261110-qa-fixes
+sudo -u financebot git pull --ff-only
+sudo -u financebot /opt/personal-finance-assistant/.venv/bin/pip install   --upgrade /opt/personal-finance-assistant
+
+# 3. Run the atomic migration explicitly and verify it.
+sudo -u financebot env   FPA_DATABASE_PATH=/var/lib/finance-assistant/finance.sqlite3   /opt/personal-finance-assistant/.venv/bin/finance-assistant status
+sudo -u financebot env   FPA_DATABASE_PATH=/var/lib/finance-assistant/finance.sqlite3   /opt/personal-finance-assistant/.venv/bin/finance-assistant integrity
+
+# 4. Reapply the new deterministic rules to historical rows. User corrections
+#    and dismissed rows are preserved; non-user merchant labels are normalised.
+sudo -u financebot env   FPA_DATABASE_PATH=/var/lib/finance-assistant/finance.sqlite3   /opt/personal-finance-assistant/.venv/bin/finance-assistant reprocess
+
+# 5. Start the bot and verify the service.
+sudo systemctl start finance-assistant.service
+sudo systemctl status finance-assistant.service
+sudo journalctl -u finance-assistant.service -n 50 --no-pager
+```
+
+The migration v5→v6 adds the split-aware view, note/evidence fields, structured
+rules and link table. It also marks old import batches with
+`possible_duplicate_count > 0` as `incomplete` so they can be resumed with
+`--accept-possible-duplicates` instead of being permanently locked out.
+
+### Rollback
+
+The migration runs in one transaction and leaves the previous schema intact on
+failure. If you need to roll back after a successful migration:
+
+```bash
+sudo systemctl stop finance-assistant.service
+sudo -u financebot git checkout 13e40b6
+sudo -u financebot /opt/personal-finance-assistant/.venv/bin/pip install   --upgrade /opt/personal-finance-assistant
+# Either restore the verified pre-upgrade backup into the production path, or
+# keep the v6 database and run the previous release only after confirming that
+# it can read the schema (it cannot; restore the backup).
+sudo systemctl start finance-assistant.service
+```
+
+Prefer restoring the verified pre-upgrade backup. Do not edit the production
+database by hand.
+
+## Optional local cockpit
+
+The cockpit is a local FastAPI/HTML application, not a Telegram web app. No
+BotFather setting is required. Install the example unit only if you want it
+running continuously:
+
+```bash
+sudo cp systemd/finance-assistant-web.service.example   /etc/systemd/system/finance-assistant-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now finance-assistant-web.service
+```
+
+It binds to `127.0.0.1:8000`. From your laptop, create an SSH tunnel:
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 financebot@<pi-host>
+```
+
+Then open `http://127.0.0.1:8000/` on the laptop. Do not change the bind address
+to `0.0.0.0` or expose the port through the router. Doing so would require a
+separate authentication, CSRF and threat-model decision.
+
+The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
+busy timeout allow concurrent reads and short writes. Keep both writing paths
+(corrections, budgets, imports) short.
+
+## Testing the recovery release
+
+Safe read-only bot checks in the allowlisted private chat:
+
+- `/start`, `/help`, `/summary`, `/spending`, `/income`, `/compare`, `/trend`,
+  `/forecast`, `/subscriptions`, `/rules`, `/merchants`, `/privacy`
+- `/ask How much did I spend this month?`
+- `/ask Where did most of my money go?`
+- `/ask How much budget do I have left?`
+- `/ask Did any subscriptions increase in price?`
+
+Write checks (these modify the production database; corrections can be undone):
+
+- `/review` and use the inline Confirm/Dismiss buttons.
+- `/budget set food.groceries 150,00 2026-11`, then `/budget food.groceries 2026-11`
+  and `/budget list 2026-11`.
+- `/correct TRANSACTION_ID food.groceries` and then
+  `finance-assistant correct TRANSACTION_ID --undo` on the Pi.
+- `/ask Show transactions that have not been categorised.`
+
+Do **not** send a synthetic CSV to the production bot: it would import synthetic
+rows into the real ledger. To exercise the upload flow, use a separate test
+database and, if needed, a separate test bot token:
+
+```bash
+sudo systemctl stop finance-assistant.service
+sudo -u financebot env FPA_DATABASE_PATH=/var/lib/finance-assistant/test-recovery.sqlite3   /opt/personal-finance-assistant/.venv/bin/finance-assistant init-db
+sudo -u financebot env FPA_DATABASE_PATH=/var/lib/finance-assistant/test-recovery.sqlite3   TELEGRAM_BOT_TOKEN=<test-token> TELEGRAM_ALLOWED_USER_IDS=<your-id>   /opt/personal-finance-assistant/.venv/bin/finance-assistant bot
+```
+
+Then restore the production service. The same test database can be served on a
+different loopback port for cockpit testing:
+
+```bash
+sudo -u financebot env FPA_DATABASE_PATH=/var/lib/finance-assistant/test-recovery.sqlite3   /opt/personal-finance-assistant/.venv/bin/finance-assistant web   --host 127.0.0.1 --port 8001
+```
+
+## BotFather settings
+
+No BotFather change is required for the recovery release:
+
+- Keep the bot in private-chat mode with the existing numeric owner allowlist.
+- Keep long polling. Do not configure a webhook.
+- Do not enable inline mode or group joining.
+- Do not add a Web App / Mini App button. The cockpit is a loopback web app, not
+  a Telegram-hosted web app; exposing it would require public HTTPS and a new
+  authentication/threat-model decision.
+- Optional cosmetic step: use `/setcommands` in BotFather to show the command
+  menu. This does not enable inline mode or public access.
