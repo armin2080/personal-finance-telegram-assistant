@@ -28,14 +28,24 @@ from personal_finance_assistant.services.analytics import (
     get_month_report,
 )
 from personal_finance_assistant.services.budgets import (
+    delete_budget,
     find_recurring_candidates,
+    find_recurring_price_changes,
     get_budget_status,
     list_review_candidates,
+    set_budget,
 )
 from personal_finance_assistant.services.insights import (
     cash_flow_forecast,
     local_question,
     monthly_trend,
+)
+from personal_finance_assistant.services.management import (
+    confirm_transaction,
+    correct_transaction,
+    dismiss_transaction,
+    list_merchants,
+    list_rules,
 )
 from personal_finance_assistant.services.uploads import (
     UploadPreview,
@@ -210,8 +220,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/review — count transactions needing local review\n"
         "/trend — recent classified expense/income trend\n"
         "/forecast — conservative month-end cash-flow forecast\n"
-        "/ask QUESTION — local aggregate-only question\n"
-        "/budget CATEGORY — current month's budget status\n"
+        "/ask QUESTION — deterministic question over local analytics\n"
+        "/budget CATEGORY [YYYY-MM] — budget status\n"
+        "/budget set CATEGORY LIMIT [YYYY-MM] — create or update a budget\n"
+        "/budget delete CATEGORY [YYYY-MM] — remove a budget\n"
+        "/review — review queue with inline confirm/dismiss actions\n"
+        "/correct TX_ID CATEGORY [CLASSIFICATION] — record a correction\n"
+        "/rules — list explicit classification rules\n"
+        "/merchants — list canonical merchants and aliases\n"
         "/subscriptions — repeated payment candidates for review\n"
         "/privacy — how data is handled\n"
         "/help — show this message\n\n"
@@ -356,41 +372,181 @@ async def compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
 
+def _parse_eur_minor(value: str) -> int:
+    from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+
+    normalized = value.strip().replace("€", "").replace(" ", "")
+    if "," in normalized and "." in normalized:
+        normalized = normalized.replace(".", "").replace(",", ".")
+    elif "," in normalized:
+        normalized = normalized.replace(",", ".")
+    try:
+        amount = Decimal(normalized)
+    except InvalidOperation as exc:
+        raise ValueError("amount is not a valid decimal value") from exc
+    if not amount.is_finite() or amount < 0:
+        raise ValueError("amount must be a non-negative decimal value")
+    return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = _settings(context)
     if not _is_authorized(update, settings) or not update.effective_message:
         return
-    if not context.args or len(context.args) > 2:
+    args = list(context.args or [])
+    year, month = _current_month(settings)
+    default_month = f"{year:04d}-{month:02d}"
+    if not args:
         await update.effective_message.reply_text(
-            "Usage: /budget CATEGORY [YYYY-MM]\n"
-            "Use a stable category key, for example subscriptions.digital."
+            "Usage:\n"
+            "/budget CATEGORY [YYYY-MM]\n"
+            "/budget set CATEGORY LIMIT [YYYY-MM]\n"
+            "/budget delete CATEGORY [YYYY-MM]\n"
+            "Limits use EUR, for example 150,00."
         )
         return
-    category_key = context.args[0]
-    year, month = _current_month(settings)
-    budget_month = context.args[1] if len(context.args) == 2 else f"{year:04d}-{month:02d}"
-    status = get_budget_status(settings.database_path, budget_month, category_key)
-    state = "exceeded" if status.exceeded else "within limit"
-    await update.effective_message.reply_text(
-        f"Budget: {CATEGORY_REGISTRY.get(category_key, category_key)} ({status.month})\n"
-        f"Limit: {_format_eur(status.limit_minor)}\n"
-        f"Used: {_format_eur(status.used_minor)}\n"
-        f"Remaining: {_format_eur(status.remaining_minor)}\n"
-        f"Status: {state}\n\n"
-        "Used totals include classified expenses only."
-    )
+    action = args[0].casefold()
+    try:
+        if action == "list":
+            from personal_finance_assistant.services.budgets import get_budget_month_summary
+
+            budget_month = args[1] if len(args) > 1 else default_month
+            summary = get_budget_month_summary(settings.database_path, budget_month)
+            if not summary.budgets:
+                await update.effective_message.reply_text(
+                    f"No budgets configured for {budget_month}."
+                )
+                return
+            lines = [f"Budgets for {budget_month}:"]
+            for item in summary.budgets:
+                lines.append(
+                    f"• {CATEGORY_REGISTRY.get(item.category_key, item.category_key)}: "
+                    f"{_format_eur(item.used_minor)} of {_format_eur(item.limit_minor)}, "
+                    f"{_format_eur(item.remaining_minor)} left ({item.percentage_used}%)"
+                )
+            if not summary.complete:
+                lines.append("")
+                lines.append(summary.disclosure)
+            await update.effective_message.reply_text("\n".join(lines))
+            return
+        if action == "set":
+            if len(args) < 3:
+                raise ValueError("Usage: /budget set CATEGORY LIMIT [YYYY-MM]")
+            category_key = args[1]
+            limit_minor = _parse_eur_minor(args[2])
+            budget_month = args[3] if len(args) > 3 else default_month
+            set_budget(settings.database_path, budget_month, category_key, limit_minor)
+            await update.effective_message.reply_text(
+                f"Budget saved: {CATEGORY_REGISTRY.get(category_key, category_key)} "
+                f"{_format_eur(limit_minor)} for {budget_month}."
+            )
+            return
+        if action == "delete":
+            if len(args) < 2:
+                raise ValueError("Usage: /budget delete CATEGORY [YYYY-MM]")
+            category_key = args[1]
+            budget_month = args[2] if len(args) > 2 else default_month
+            deleted = delete_budget(settings.database_path, budget_month, category_key)
+            await update.effective_message.reply_text(
+                "Budget deleted." if deleted else "No matching budget was found."
+            )
+            return
+    except ValueError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    if len(args) > 2:
+        await update.effective_message.reply_text(
+            "Usage: /budget CATEGORY [YYYY-MM] or /budget set CATEGORY LIMIT [YYYY-MM]"
+        )
+        return
+    category_key = args[0]
+    budget_month = args[1] if len(args) == 2 else default_month
+    try:
+        status = get_budget_status(settings.database_path, budget_month, category_key)
+    except ValueError:
+        await update.effective_message.reply_text("No matching budget was found.")
+        return
+    state_text = "exceeded" if status.exceeded else status.status.replace("_", " ")
+    lines = [
+        f"Budget: {CATEGORY_REGISTRY.get(category_key, category_key)} ({status.month})",
+        f"Limit: {_format_eur(status.limit_minor)}",
+        f"Used: {_format_eur(status.used_minor)}",
+        f"Remaining: {_format_eur(status.remaining_minor)}",
+        f"Used: {status.percentage_used}% · {status.elapsed_days}/{status.total_days} days",
+        f"Status: {state_text}",
+    ]
+    if status.projected_minor is not None:
+        lines.append(f"Projected month-end: {_format_eur(status.projected_minor)}")
+    if not status.complete:
+        lines.append(
+            f"{_format_eur(status.uncategorized_expenses_minor)} of expenditure is not yet "
+            "categorised. Category budget status is incomplete."
+        )
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = _settings(context)
     if not _is_authorized(update, settings) or not update.effective_message:
         return
-    candidates = list_review_candidates(settings.database_path, limit=100)
+    candidates = list_review_candidates(settings.database_path, limit=5)
+    if not candidates:
+        await update.effective_message.reply_text(
+            "No transactions need review. High-confidence deterministic categories are "
+            "confirmed automatically."
+        )
+        return
+    if context.user_data is not None:
+        context.user_data["review_ids"] = [item.transaction_id for item in candidates]
+    buttons: list[list[InlineKeyboardButton]] = []
+    for index, item in enumerate(candidates):
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"Confirm {item.booking_date} {_format_eur(item.amount_minor)}",
+                    callback_data=f"review:confirm:{index}",
+                ),
+                InlineKeyboardButton("Dismiss", callback_data=f"review:dismiss:{index}"),
+            ]
+        )
     await update.effective_message.reply_text(
-        f"{len(candidates)} transaction(s) need local review.\n\n"
-        "Use `finance-assistant review` on the device for safe review identifiers "
-        "and reasons. Detailed bank text is not sent through Telegram."
+        f"{len(candidates)} transaction(s) shown for local review.\n"
+        "Confirm or dismiss without exposing raw bank text. Use /correct TX_ID CATEGORY "
+        "for an explicit category correction.",
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
+
+
+async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    settings = _settings(context)
+    if query is None or not _is_authorized(update, settings) or context.user_data is None:
+        return
+    await query.answer()
+    parts = (query.data or "").split(":")
+    ids = context.user_data.get("review_ids") or []
+    if len(parts) != 3 or not isinstance(ids, list):
+        await query.edit_message_text("This review action expired. Run /review again.")
+        return
+    action, raw_index = parts[1], parts[2]
+    try:
+        index = int(raw_index)
+    except ValueError:
+        await query.edit_message_text("This review action is invalid.")
+        return
+    if index < 0 or index >= len(ids):
+        await query.edit_message_text("This review action expired. Run /review again.")
+        return
+    transaction_id = ids[index]
+    if action == "confirm":
+        confirm_transaction(settings.database_path, transaction_id)
+        message = "Transaction confirmed."
+    elif action == "dismiss":
+        dismiss_transaction(settings.database_path, transaction_id)
+        message = "Transaction dismissed."
+    else:
+        message = "Unknown review action."
+    await query.edit_message_text(message)
 
 
 async def trend_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -456,10 +612,11 @@ async def subscriptions_command(update: Update, context: ContextTypes.DEFAULT_TY
     if not _is_authorized(update, settings) or not update.effective_message:
         return
     candidates = find_recurring_candidates(settings.database_path)
+    changes = find_recurring_price_changes(settings.database_path)
     if not candidates:
         await update.effective_message.reply_text(
             "No repeated payment candidates found. Candidates require at least "
-            "three stable classified expenses."
+            "three stable classified expenses with monthly-to-quarterly spacing."
         )
         return
     lines = ["Repeated payment candidates (not confirmed subscriptions):", ""]
@@ -467,14 +624,83 @@ async def subscriptions_command(update: Update, context: ContextTypes.DEFAULT_TY
         lines.append(
             f"• {candidate.merchant}: {_format_eur(candidate.average_amount_minor)} "
             f"about every {candidate.average_interval_days} days; "
-            f"{candidate.observations} observations; {candidate.confidence} confidence"
+            f"{candidate.observations} observations; {candidate.status} confidence"
         )
+    if changes:
+        lines.extend(["", "Price changes with evidence:"])
+        for change in changes[:5]:
+            lines.append(
+                f"• {change.merchant}: {_format_eur(change.old_amount_minor)} → "
+                f"{_format_eur(change.new_amount_minor)} effective {change.changed_on}"
+            )
     lines.extend(
         [
             "",
             "Review dates and amounts locally before treating any candidate as a subscription.",
         ]
     )
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+async def correct_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    args = list(context.args or [])
+    if len(args) < 2:
+        await update.effective_message.reply_text(
+            "Usage: /correct TX_ID CATEGORY [CLASSIFICATION]\n"
+            "Classification defaults to expense_candidate."
+        )
+        return
+    classification = args[2] if len(args) > 2 else "expense_candidate"
+    try:
+        correct_transaction(
+            settings.database_path,
+            args[0],
+            classification=classification,
+            category_key=args[1],
+        )
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"Correction failed: {exc}")
+        return
+    await update.effective_message.reply_text("Correction saved and confirmed.")
+
+
+async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    rules = list_rules(settings.database_path)
+    if not rules:
+        await update.effective_message.reply_text(
+            "No explicit classification rules are configured."
+        )
+        return
+    lines = ["Explicit classification rules:"]
+    for rule in rules[:10]:
+        lines.append(
+            f"• {rule.merchant_pattern or rule.descriptor_pattern or rule.pattern} → "
+            f"{CATEGORY_REGISTRY.get(rule.category_key, rule.category_key)} "
+            f"(priority {rule.priority})"
+        )
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+async def merchants_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _settings(context)
+    if not _is_authorized(update, settings) or not update.effective_message:
+        return
+    merchants = list_merchants(settings.database_path)
+    if not merchants:
+        await update.effective_message.reply_text("No canonical merchant entities yet.")
+        return
+    lines = ["Canonical merchants:"]
+    for merchant in merchants[:10]:
+        lines.append(
+            f"• {merchant.canonical_name}: {merchant.transaction_count} rows, "
+            f"default {merchant.default_category_key or 'none'}"
+        )
     await update.effective_message.reply_text("\n".join(lines))
 
 
@@ -524,6 +750,10 @@ def run_bot(*, drop_pending_updates: bool = False) -> None:
     application.add_handler(MessageHandler(filters.Document.ALL, document_upload))
     application.add_handler(CommandHandler("budget", budget_command))
     application.add_handler(CommandHandler("subscriptions", subscriptions_command))
+    application.add_handler(CommandHandler("correct", correct_command))
+    application.add_handler(CommandHandler("rules", rules_command))
+    application.add_handler(CommandHandler("merchants", merchants_command))
+    application.add_handler(CallbackQueryHandler(review_callback, pattern=r"^review:"))
     application.add_error_handler(error_handler)
     logger.info("Starting private finance bot in long-polling mode")
     application.run_polling(

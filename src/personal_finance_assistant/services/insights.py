@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+from math import isqrt
 from pathlib import Path
 
+from personal_finance_assistant.categories import (
+    FIXED_COST_CATEGORIES,
+    category_label,
+)
 from personal_finance_assistant.domain import (
     BudgetForecast,
     CashFlowForecast,
     Insight,
     MonthlyTrend,
+    QuestionAnswer,
 )
 from personal_finance_assistant.storage.sqlite import Database
 
@@ -154,26 +160,31 @@ def anomaly_categories(
     return tuple(sorted(anomalies))
 
 
+def _format_eur(minor_units: int) -> str:
+    sign = "-" if minor_units < 0 else ""
+    value = abs(minor_units)
+    whole = f"{value // 100:,}".replace(",", ".")
+    return f"{sign}{whole},{value % 100:02d} €"
+
+
 def local_question(database_path: str | Path, question: str, month: str) -> str:
-    """Answer a small allowlisted set of aggregate questions without external AI."""
+    """Answer a local question through the structured deterministic parser."""
 
-    def format_eur(minor_units: int) -> str:
-        sign = "-" if minor_units < 0 else ""
-        value = abs(minor_units)
-        return f"{sign}{value // 100},{value % 100:02d} EUR"
+    from personal_finance_assistant.services.questions import answer_question
 
-    normalized = " ".join(question.casefold().split())
-    if "spending" in normalized or "expense" in normalized:
-        report = Database(database_path).period_report(
-            _month_start(month), _next_month(_month_start(month))
+    try:
+        return answer_question(database_path, question, month).text
+    except ValueError:
+        return (
+            "I could not read that question. Try: 'How much did I spend this month?' "
+            "or 'Where did most of my money go?'"
         )
-        return f"Classified spending for {month}: {format_eur(report.expenses_minor)}."
-    if "income" in normalized or "earn" in normalized:
-        report = Database(database_path).period_report(
-            _month_start(month), _next_month(_month_start(month))
-        )
-        return f"Classified income for {month}: {format_eur(report.income_minor)}."
-    return "I can answer aggregate spending or income questions for a specified month."
+
+
+def ask_financial_question(database_path: str | Path, question: str, month: str) -> QuestionAnswer:
+    from personal_finance_assistant.services.questions import answer_question
+
+    return answer_question(database_path, question, month)
 
 
 def budget_recommendations(
@@ -189,6 +200,13 @@ def budget_recommendations(
         ).fetchall()
     recommendations: list[str] = []
     for row in budgets:
+        status = database.budget_status(month, row["category_key"], as_of=as_of)
+        if status.exceeded:
+            recommendations.append(
+                f"Review {row['category_key']}: classified spend already exceeds "
+                "the configured budget."
+            )
+            continue
         forecast = forecast_budget(database_path, month, row["category_key"], as_of=as_of)
         if (
             forecast.projected_minor is not None
@@ -202,6 +220,10 @@ def budget_recommendations(
     return tuple(recommendations)
 
 
+def _safe_percentage(part: int, whole: int) -> int:
+    return round(part * 100 / whole) if whole else 0
+
+
 def generate_insights(
     database_path: str | Path,
     start: date,
@@ -210,7 +232,7 @@ def generate_insights(
     baseline_start: date | None = None,
     baseline_end: date | None = None,
 ) -> tuple[Insight, ...]:
-    """Generate concise evidence-backed insights from deterministic reports."""
+    """Generate concise, evidence-backed insights from deterministic reports."""
 
     database = Database(database_path)
     overview = database.financial_overview(
@@ -235,39 +257,68 @@ def generate_insights(
             )
         )
         return tuple(insights)
-    if overview.data_quality != "complete":
+
+    report = database.period_report(start, end)
+    if report.uncategorized_expenses_minor:
         insights.append(
             Insight(
                 "review-needed",
-                "Some transactions still need review",
-                "The totals exclude or conservatively separate unresolved classifications.",
+                "Some spending is not yet categorised",
+                f"{_format_eur(report.uncategorized_expenses_minor)} of "
+                f"{_format_eur(report.expenses_minor)} spending is included in the total "
+                "but excluded from category comparisons until it is reviewed.",
                 "high",
                 start,
                 end,
                 "high",
                 (),
-                "Review the queued transactions before relying on category comparisons.",
+                "Open Review and assign a category to the uncertain transactions.",
             )
         )
-    if baseline_start is not None and baseline_end is not None:
-        current = database.period_report(start, end)
-        baseline = database.period_report(baseline_start, baseline_end)
-        baseline_categories = dict(
-            (item.category_key, item.amount_minor) for item in baseline.category_expenses
+
+    if report.category_expenses:
+        largest = max(report.category_expenses, key=lambda item: item.amount_minor)
+        evidence = database.category_transaction_ids(start, end, largest.category_key, limit=10)
+        share = _safe_percentage(largest.amount_minor, report.expenses_minor)
+        insights.append(
+            Insight(
+                f"largest-category-{largest.category_key}",
+                f"Largest spending category: {category_label(largest.category_key)}",
+                f"{category_label(largest.category_key)} accounted for "
+                f"{_format_eur(largest.amount_minor)} ({share}% of "
+                f"{_format_eur(report.expenses_minor)} classified spending).",
+                "medium",
+                start,
+                end,
+                "high",
+                evidence,
+                "Open the category to inspect its transactions.",
+            )
         )
-        increases = [
-            (item.category_key, item.amount_minor - baseline_categories.get(item.category_key, 0))
-            for item in current.category_expenses
-            if item.amount_minor > baseline_categories.get(item.category_key, 0)
+
+    if baseline_start is not None and baseline_end is not None:
+        baseline = database.period_report(baseline_start, baseline_end)
+        baseline_categories = {
+            item.category_key: item.amount_minor for item in baseline.category_expenses
+        }
+        changes = [
+            (
+                item.category_key,
+                item.amount_minor - baseline_categories.get(item.category_key, 0),
+            )
+            for item in report.category_expenses
         ]
+        increases = [item for item in changes if item[1] > 0]
+        decreases = [item for item in changes if item[1] < 0]
         if increases:
             category, increase = max(increases, key=lambda item: item[1])
-            evidence = database.category_transaction_ids(start, end, category)
+            evidence = database.category_transaction_ids(start, end, category, limit=10)
             insights.append(
                 Insight(
                     f"category-increase-{category}",
-                    f"{category} is the largest spending increase",
-                    f"Spending is {increase} EUR cents above the comparison period.",
+                    f"{category_label(category)} increased most",
+                    f"{category_label(category)} is {_format_eur(increase)} above "
+                    f"{_period_label(baseline_start, baseline_end)}.",
                     "medium",
                     start,
                     end,
@@ -276,18 +327,155 @@ def generate_insights(
                     "Open the filtered transactions and review the largest contributors.",
                 )
             )
-    if overview.savings_rate_percent is not None and overview.savings_rate_percent < 0:
+        if decreases:
+            category, decrease = min(decreases, key=lambda item: item[1])
+            evidence = database.category_transaction_ids(start, end, category, limit=10)
+            insights.append(
+                Insight(
+                    f"category-decrease-{category}",
+                    f"{category_label(category)} decreased most",
+                    f"{category_label(category)} is {_format_eur(abs(decrease))} below "
+                    f"{_period_label(baseline_start, baseline_end)}.",
+                    "medium",
+                    start,
+                    end,
+                    "high",
+                    evidence,
+                    "Open the category to confirm whether the change is expected.",
+                )
+            )
+        income_change = report.income_minor - baseline.income_minor
+        if income_change:
+            direction = "increased" if income_change > 0 else "decreased"
+            insights.append(
+                Insight(
+                    "income-change",
+                    f"Income {direction}",
+                    f"Classified income {direction} by {_format_eur(abs(income_change))} "
+                    f"versus {_period_label(baseline_start, baseline_end)}.",
+                    "medium",
+                    start,
+                    end,
+                    "high",
+                    (),
+                    "Check whether the change reflects a salary change or a one-off credit.",
+                )
+            )
+
+    merchants = database.merchant_expenses(start, end, limit=5)
+    if merchants and report.expenses_minor:
+        top = merchants[0]
+        share = _safe_percentage(top.amount_minor, report.expenses_minor)
+        merchant_evidence: tuple[str, ...] = ()
         insights.append(
             Insight(
-                "negative-net-flow",
-                "Outflows exceeded classified inflows",
-                "Classified expenses and fees were higher than income and refunds in this period.",
-                "high",
+                "merchant-concentration",
+                f"Top merchant: {top.merchant}",
+                f"{top.merchant} received {_format_eur(top.amount_minor)} "
+                f"({share}% of classified spending) across {top.transaction_count} row(s).",
+                "medium",
                 start,
                 end,
                 "high",
-                (),
-                "Review the largest categories and any unresolved transactions.",
+                merchant_evidence,
+                "Open merchant history to review the underlying transactions.",
             )
         )
+
+    expense_rows = database.top_expense_transactions(start, end, limit=25)
+    if expense_rows:
+        amounts = [abs(row.amount_minor) for row in expense_rows]
+        mean = sum(amounts) // len(amounts)
+        variance = sum((amount - mean) ** 2 for amount in amounts) // len(amounts)
+        threshold = mean + 2 * isqrt(variance)
+        unusual = [
+            row
+            for row in expense_rows
+            if abs(row.amount_minor) > threshold and abs(row.amount_minor) >= 5000
+        ]
+        if unusual:
+            row = max(unusual, key=lambda item: abs(item.amount_minor))
+            insights.append(
+                Insight(
+                    "unusual-expense",
+                    f"Unusually large expense at {row.merchant}",
+                    f"A single {_format_eur(abs(row.amount_minor))} payment on "
+                    f"{row.booking_date.isoformat()} is above the period's typical range.",
+                    "medium",
+                    start,
+                    end,
+                    "medium",
+                    (row.transaction_id,),
+                    "Open the transaction to confirm whether it is a one-off or a classification error.",
+                )
+            )
+
+    if report.category_expenses:
+        fixed = sum(
+            item.amount_minor
+            for item in report.category_expenses
+            if item.category_key in FIXED_COST_CATEGORIES
+        )
+        discretionary = report.expenses_minor - fixed
+        insights.append(
+            Insight(
+                "fixed-vs-discretionary",
+                "Fixed and discretionary spending",
+                f"Fixed commitments were {_format_eur(fixed)} and discretionary spending "
+                f"was {_format_eur(discretionary)} in this period.",
+                "low",
+                start,
+                end,
+                "medium",
+                (),
+                "Review discretionary categories first when adjusting a budget.",
+            )
+        )
+
+    month = start.strftime("%Y-%m")
+    for status in database.list_budget_statuses(month):
+        if status.exceeded or (
+            status.projected_minor is not None and status.projected_minor > status.limit_minor
+        ):
+            insights.append(
+                Insight(
+                    f"budget-pace-{status.category_key}",
+                    f"Budget pace: {category_label(status.category_key)}",
+                    f"{_format_eur(status.used_minor)} of "
+                    f"{_format_eur(status.limit_minor)} used "
+                    f"({status.percentage_used}%); projected month-end "
+                    f"{_format_eur(status.projected_minor or status.used_minor)}.",
+                    "high",
+                    start,
+                    end,
+                    "medium",
+                    (),
+                    "Review the category transactions or adjust the budget.",
+                )
+            )
+
+    for change in database.recurring_price_changes():
+        if start - timedelta(days=365) <= change.changed_on <= end:
+            insights.append(
+                Insight(
+                    f"recurring-price-{change.merchant}",
+                    f"{change.merchant} became more expensive",
+                    f"{change.merchant} increased from {_format_eur(change.old_amount_minor)} "
+                    f"to {_format_eur(change.new_amount_minor)} effective "
+                    f"{change.changed_on.isoformat()}, with "
+                    f"{change.observations_before} earlier and {change.observations_after} "
+                    "later observations.",
+                    "medium",
+                    start,
+                    end,
+                    change.confidence,
+                    change.supporting_transaction_ids[:10],
+                    "Open the merchant history to confirm the new recurring amount.",
+                )
+            )
+
     return tuple(insights)
+
+
+def _period_label(start: date, end: date) -> str:
+    return f"{start.isoformat()} to {(end - timedelta(days=1)).isoformat()}"

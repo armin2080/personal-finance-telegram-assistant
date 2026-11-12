@@ -1,4 +1,4 @@
-"""Loopback-only FastAPI adapter for the local finance dashboard."""
+"""Loopback-only FastAPI adapter for the local finance cockpit."""
 
 from __future__ import annotations
 
@@ -8,19 +8,58 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
-from personal_finance_assistant.categories import CATEGORY_REGISTRY
+from personal_finance_assistant.categories import CATEGORY_REGISTRY, category_label
+from personal_finance_assistant.domain import TransactionRecord
 from personal_finance_assistant.services.analytics import (
+    check_database_integrity,
     get_financial_overview,
+    get_period_report,
+    list_transactions_page,
     merchant_expenses,
     weekly_trend,
 )
 from personal_finance_assistant.services.budgets import (
+    decide_recurring,
+    delete_budget,
     find_recurring_candidates,
-    list_budget_statuses,
+    find_recurring_price_changes,
+    get_budget_month_summary,
+    list_review_candidates,
+    set_budget,
+    set_budget_alert,
 )
-from personal_finance_assistant.services.insights import generate_insights, monthly_trend
-from personal_finance_assistant.storage.sqlite import Database
+from personal_finance_assistant.services.imports import (
+    data_coverage,
+    list_import_batches,
+    undo_import_batch,
+)
+from personal_finance_assistant.services.insights import (
+    ask_financial_question,
+    generate_insights,
+    monthly_trend,
+)
+from personal_finance_assistant.services.management import (
+    add_merchant_alias,
+    add_rule,
+    confirm_transaction,
+    correct_transaction,
+    correct_transaction_merchant,
+    delete_rule,
+    delete_split,
+    dismiss_transaction,
+    get_transaction_splits,
+    link_transactions,
+    list_merchants,
+    list_rules,
+    merge_merchants,
+    remove_merchant_alias,
+    set_merchant_default_category,
+    set_transaction_note,
+    split_transaction,
+    undo_transaction_correction,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -36,14 +75,134 @@ def _money(minor_units: int) -> dict[str, int | str]:
     return {"minor": minor_units, "currency": "EUR"}
 
 
+def _share(part: int, whole: int) -> int:
+    return round(part * 100 / whole) if whole else 0
+
+
+def _transaction_payload(record: TransactionRecord) -> dict[str, object]:
+    return {
+        "id": record.transaction_id,
+        "date": record.booking_date,
+        "amount": _money(record.amount_minor),
+        "merchant": record.merchant,
+        "counterparty": record.counterparty,
+        "description": record.description,
+        "classification": record.classification,
+        "category": record.category_key,
+        "category_label": category_label(record.category_key),
+        "review_status": record.review_status,
+        "payment_channel": record.payment_channel,
+        "merchant_source": record.merchant_source,
+        "merchant_confidence": record.merchant_confidence,
+        "classification_source": record.classification_source,
+        "classification_confidence": record.classification_confidence,
+        "category_source": record.category_source,
+        "category_confidence": record.category_confidence,
+        "evidence": record.evidence,
+        "note": record.note,
+        "has_split": record.has_split,
+        "split_categories": [
+            {"key": key, "label": category_label(key)} for key in record.split_categories
+        ],
+    }
+
+
+class CorrectBody(BaseModel):
+    classification: str | None = None
+    category_key: str | None = None
+    merchant: str | None = None
+    note: str | None = None
+    apply_to_future: bool = False
+    rule_priority: int = Field(default=150, ge=0)
+
+
+class NoteBody(BaseModel):
+    note: str
+
+
+class SplitAllocation(BaseModel):
+    amount_minor: int
+    category_key: str
+    note: str = ""
+
+
+class SplitBody(BaseModel):
+    allocations: list[SplitAllocation] = Field(min_length=1)
+
+
+class LinkBody(BaseModel):
+    linked_transaction_id: str
+    link_type: str
+
+
+class RuleBody(BaseModel):
+    pattern: str = ""
+    classification: str = "expense_candidate"
+    category_key: str
+    confidence: float = 1.0
+    priority: int = 100
+    merchant_pattern: str | None = None
+    descriptor_pattern: str | None = None
+    payment_channel: str | None = None
+    direction: str = "any"
+    payment_type: str | None = None
+    label: str = ""
+
+
+class BudgetBody(BaseModel):
+    month: str
+    category_key: str
+    limit_minor: int
+
+
+class BudgetAlertBody(BaseModel):
+    category_key: str
+    threshold_percent: int
+    enabled: bool = True
+
+
+class RecurringDecisionBody(BaseModel):
+    merchant: str
+    decision: str
+
+
+class MerchantAliasBody(BaseModel):
+    alias: str
+    canonical_name: str
+    confidence: float = 1.0
+    default_category_key: str | None = None
+
+
+class MerchantDefaultBody(BaseModel):
+    canonical_name: str
+    category_key: str | None = None
+
+
+class MerchantMergeBody(BaseModel):
+    source_canonical: str
+    target_canonical: str
+    confirm: bool = False
+
+
+class AskBody(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    month: str | None = None
+
+
 def create_app(database_path: str | Path) -> FastAPI:
     """Create a dashboard app bound to one local SQLite database."""
 
     app = FastAPI(title="Personal Finance Cockpit", docs_url="/api/docs")
 
     @app.get("/api/health")
-    def health() -> dict[str, int | bool]:
+    def health() -> dict[str, int | bool | str | None]:
+        from personal_finance_assistant.storage.sqlite import Database
+
         return Database(database_path).health_status()
+
+    @app.get("/api/coverage")
+    def coverage() -> dict[str, object]:
+        return data_coverage(database_path)
 
     @app.get("/api/categories")
     def categories() -> dict[str, str]:
@@ -72,6 +231,7 @@ def create_app(database_path: str | Path) -> FastAPI:
                 baseline_start=baseline_start_date,
                 baseline_end=baseline_end_date,
             )
+            report = get_period_report(database_path, start_date, end_date)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
@@ -83,18 +243,28 @@ def create_app(database_path: str | Path) -> FastAPI:
             ),
             "income": _money(result.income_minor),
             "expenses": _money(result.expenses_minor),
+            "categorized_expenses": _money(result.categorized_expenses_minor),
+            "uncategorized_expenses": _money(result.uncategorized_expenses_minor),
             "refunds": _money(result.refunds_minor),
             "transfers": _money(result.transfers_minor),
             "fees": _money(result.fees_minor),
+            "reversals": _money(result.reversals_minor),
+            "cash_withdrawals": _money(result.cash_withdrawals_minor),
+            "savings": _money(result.savings_minor),
             "net_cash_flow": _money(result.net_cash_flow_minor),
             "savings_rate_percent": result.savings_rate_percent,
             "transaction_count": result.transaction_count,
             "data_quality": result.data_quality,
             "categories": [
-                {"key": item.category_key, "amount": _money(item.amount_minor)}
-                for item in Database(database_path)
-                .period_report(start_date, end_date)
-                .category_expenses
+                {
+                    "key": item.category_key,
+                    "label": category_label(item.category_key),
+                    "amount": _money(item.amount_minor),
+                    "share_percent": _share(item.amount_minor, report.expenses_minor),
+                }
+                for item in sorted(
+                    report.category_expenses, key=lambda item: item.amount_minor, reverse=True
+                )
             ],
         }
 
@@ -106,37 +276,179 @@ def create_app(database_path: str | Path) -> FastAPI:
         category: str | None = None,
         classification: str | None = None,
         review_status: str | None = None,
+        merchant: str | None = None,
+        uncategorized: bool = False,
+        ids: str | None = None,
+        sort: str = "date",
+        direction: str = "desc",
         limit: int = 100,
+        offset: int = 0,
     ) -> dict[str, object]:
         try:
-            rows = Database(database_path).list_transactions(
+            rows, total = list_transactions_page(
+                database_path,
                 _parse_date(start, "start"),
                 _parse_date(end, "end"),
                 search=search,
                 category_key=category,
                 classification=classification,
                 review_status=review_status,
+                merchant=merchant,
+                uncategorized_only=uncategorized,
+                transaction_ids=tuple(item for item in (ids or "").split(",") if item) or None,
+                sort_by=sort,
+                sort_dir=direction,
                 limit=limit,
+                offset=offset,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
-            "transactions": [
+            "transactions": [_transaction_payload(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "sort": sort,
+            "direction": direction,
+        }
+
+    @app.get("/api/review")
+    def review(limit: int = 200) -> dict[str, object]:
+        try:
+            candidates = list_review_candidates(database_path, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "review": [
                 {
-                    "id": row.transaction_id,
-                    "date": row.booking_date,
-                    "amount": _money(row.amount_minor),
-                    "merchant": row.merchant,
-                    "counterparty": row.counterparty,
-                    "description": row.description,
-                    "classification": row.classification,
-                    "category": row.category_key,
-                    "review_status": row.review_status,
-                    "payment_channel": row.payment_channel,
+                    "id": item.transaction_id,
+                    "date": item.booking_date,
+                    "amount": _money(item.amount_minor),
+                    "merchant": item.merchant,
+                    "classification": item.classification,
+                    "category": item.category_key,
+                    "needs_merchant_review": item.needs_merchant_review,
+                    "needs_classification_review": item.needs_classification_review,
                 }
-                for row in rows
+                for item in candidates
             ]
         }
+
+    @app.post("/api/transactions/{transaction_id}/correct")
+    def correct(transaction_id: str, body: CorrectBody) -> dict[str, object]:
+        try:
+            if body.merchant:
+                correct_transaction_merchant(database_path, transaction_id, body.merchant)
+            if body.classification or body.category_key:
+                if not body.classification or not body.category_key:
+                    raise ValueError("classification and category_key are required together")
+                correct_transaction(
+                    database_path,
+                    transaction_id,
+                    classification=body.classification,
+                    category_key=body.category_key,
+                    note=body.note,
+                )
+            elif body.note is not None:
+                set_transaction_note(database_path, transaction_id, body.note)
+            if body.apply_to_future:
+                merchant = body.merchant
+                if not merchant:
+                    raise ValueError("apply_to_future requires a merchant")
+                add_rule(
+                    database_path,
+                    pattern=f"merchant:{merchant}",
+                    classification=body.classification or "expense_candidate",
+                    category_key=body.category_key or "uncategorized",
+                    merchant_pattern=merchant,
+                    priority=body.rule_priority,
+                    label=f"Learned from transaction {transaction_id}",
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "updated", "transaction_id": transaction_id}
+
+    @app.post("/api/transactions/{transaction_id}/note")
+    def note(transaction_id: str, body: NoteBody) -> dict[str, object]:
+        try:
+            set_transaction_note(database_path, transaction_id, body.note)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "updated"}
+
+    @app.post("/api/transactions/{transaction_id}/confirm")
+    def confirm(transaction_id: str) -> dict[str, object]:
+        try:
+            confirm_transaction(database_path, transaction_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "confirmed"}
+
+    @app.post("/api/transactions/{transaction_id}/dismiss")
+    def dismiss(transaction_id: str) -> dict[str, object]:
+        try:
+            dismiss_transaction(database_path, transaction_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "dismissed"}
+
+    @app.post("/api/transactions/{transaction_id}/undo")
+    def undo_correction(transaction_id: str) -> dict[str, object]:
+        try:
+            undo_transaction_correction(database_path, transaction_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "recomputed"}
+
+    @app.get("/api/transactions/{transaction_id}/splits")
+    def splits(transaction_id: str) -> dict[str, object]:
+        return {
+            "splits": [
+                {
+                    "id": item.split_id,
+                    "amount": _money(item.amount_minor),
+                    "category": item.category_key,
+                    "category_label": category_label(item.category_key),
+                    "note": item.note,
+                }
+                for item in get_transaction_splits(database_path, transaction_id)
+            ]
+        }
+
+    @app.post("/api/transactions/{transaction_id}/split")
+    def create_split(transaction_id: str, body: SplitBody) -> dict[str, object]:
+        try:
+            split_transaction(
+                database_path,
+                transaction_id,
+                tuple(
+                    (item.amount_minor, item.category_key, item.note) for item in body.allocations
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "split"}
+
+    @app.delete("/api/transactions/{transaction_id}/split")
+    def remove_split(transaction_id: str) -> dict[str, object]:
+        try:
+            deleted = delete_split(database_path, transaction_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "removed", "deleted": deleted}
+
+    @app.post("/api/transactions/{transaction_id}/link")
+    def link(transaction_id: str, body: LinkBody) -> dict[str, object]:
+        try:
+            link_transactions(
+                database_path,
+                transaction_id,
+                body.linked_transaction_id,
+                link_type=body.link_type,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "linked"}
 
     @app.get("/api/insights")
     def insights(
@@ -214,11 +526,7 @@ def create_app(database_path: str | Path) -> FastAPI:
         }
 
     @app.get("/api/merchants")
-    def merchants(
-        start: str,
-        end: str,
-        limit: int = 20,
-    ) -> dict[str, object]:
+    def merchants(start: str, end: str, limit: int = 20) -> dict[str, object]:
         try:
             result = merchant_expenses(
                 database_path,
@@ -239,24 +547,174 @@ def create_app(database_path: str | Path) -> FastAPI:
             ]
         }
 
+    @app.get("/api/merchant-entities")
+    def merchant_entities() -> dict[str, object]:
+        return {
+            "merchants": [
+                {
+                    "id": item.entity_id,
+                    "canonical_name": item.canonical_name,
+                    "default_category": item.default_category_key,
+                    "default_category_label": category_label(item.default_category_key)
+                    if item.default_category_key
+                    else None,
+                    "aliases": list(item.aliases),
+                    "transaction_count": item.transaction_count,
+                    "total": _money(item.total_minor),
+                }
+                for item in list_merchants(database_path)
+            ]
+        }
+
+    @app.post("/api/merchant-entities/alias")
+    def merchant_alias(body: MerchantAliasBody) -> dict[str, object]:
+        try:
+            add_merchant_alias(
+                database_path,
+                body.alias,
+                body.canonical_name,
+                confidence=body.confidence,
+                default_category_key=body.default_category_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
+
+    @app.delete("/api/merchant-entities/alias")
+    def merchant_alias_delete(alias: str) -> dict[str, object]:
+        return {"removed": remove_merchant_alias(database_path, alias)}
+
+    @app.post("/api/merchant-entities/default")
+    def merchant_default(body: MerchantDefaultBody) -> dict[str, object]:
+        try:
+            set_merchant_default_category(database_path, body.canonical_name, body.category_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
+
+    @app.post("/api/merchant-entities/merge")
+    def merchant_merge(body: MerchantMergeBody) -> dict[str, object]:
+        try:
+            moved = merge_merchants(
+                database_path,
+                body.source_canonical,
+                body.target_canonical,
+                confirm=body.confirm,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "merged", "transactions_updated": moved}
+
+    @app.get("/api/rules")
+    def rules() -> dict[str, object]:
+        return {
+            "rules": [
+                {
+                    "id": item.rule_id,
+                    "pattern": item.pattern,
+                    "classification": item.classification,
+                    "category": item.category_key,
+                    "category_label": category_label(item.category_key),
+                    "confidence": item.confidence,
+                    "priority": item.priority,
+                    "match_type": item.match_type,
+                    "merchant_pattern": item.merchant_pattern,
+                    "descriptor_pattern": item.descriptor_pattern,
+                    "payment_channel": item.payment_channel,
+                    "direction": item.direction,
+                    "payment_type": item.payment_type,
+                    "enabled": item.enabled,
+                    "label": item.label,
+                }
+                for item in list_rules(database_path)
+            ]
+        }
+
+    @app.post("/api/rules")
+    def rule_create(body: RuleBody) -> dict[str, object]:
+        try:
+            add_rule(
+                database_path,
+                body.pattern,
+                body.classification,
+                body.category_key,
+                confidence=body.confidence,
+                priority=body.priority,
+                merchant_pattern=body.merchant_pattern,
+                descriptor_pattern=body.descriptor_pattern,
+                payment_channel=body.payment_channel,
+                direction=body.direction,
+                payment_type=body.payment_type,
+                label=body.label,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
+
+    @app.delete("/api/rules/{rule_id}")
+    def rule_delete(rule_id: str) -> dict[str, object]:
+        return {"deleted": delete_rule(database_path, rule_id)}
+
     @app.get("/api/budgets")
     def budgets(month: str) -> dict[str, object]:
         try:
-            result = list_budget_statuses(database_path, month)
+            summary = get_budget_month_summary(database_path, month)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
+            "month": summary.month,
+            "total_expenses": _money(summary.total_expenses_minor),
+            "categorized_expenses": _money(summary.categorized_expenses_minor),
+            "uncategorized_expenses": _money(summary.uncategorized_expenses_minor),
+            "complete": summary.complete,
+            "disclosure": summary.disclosure,
             "budgets": [
                 {
                     "category": item.category_key,
+                    "category_label": category_label(item.category_key),
                     "limit": _money(item.limit_minor),
                     "used": _money(item.used_minor),
                     "remaining": _money(item.remaining_minor),
                     "exceeded": item.exceeded,
+                    "percentage_used": item.percentage_used,
+                    "elapsed_days": item.elapsed_days,
+                    "total_days": item.total_days,
+                    "projected": _money(item.projected_minor)
+                    if item.projected_minor is not None
+                    else None,
+                    "uncategorized_expenses": _money(item.uncategorized_expenses_minor),
+                    "complete": item.complete,
+                    "status": item.status,
+                    "alert_threshold_percent": item.alert_threshold_percent,
                 }
-                for item in result
-            ]
+                for item in summary.budgets
+            ],
         }
+
+    @app.post("/api/budgets")
+    def budget_save(body: BudgetBody) -> dict[str, object]:
+        try:
+            set_budget(database_path, body.month, body.category_key, body.limit_minor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
+
+    @app.delete("/api/budgets")
+    def budget_delete(month: str, category: str) -> dict[str, object]:
+        return {"deleted": delete_budget(database_path, month, category)}
+
+    @app.post("/api/budgets/alert")
+    def budget_alert(body: BudgetAlertBody) -> dict[str, object]:
+        try:
+            set_budget_alert(
+                database_path,
+                body.category_key,
+                body.threshold_percent,
+                enabled=body.enabled,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
 
     @app.get("/api/recurring")
     def recurring() -> dict[str, object]:
@@ -272,10 +730,88 @@ def create_app(database_path: str | Path) -> FastAPI:
                     "confidence": item.confidence,
                     "confirmed": item.confirmed,
                     "regularity": item.regularity,
+                    "status": item.status,
+                    "latest_amount": _money(item.latest_amount_minor)
+                    if item.latest_amount_minor is not None
+                    else None,
+                    "previous_amount": _money(item.previous_amount_minor)
+                    if item.previous_amount_minor is not None
+                    else None,
+                    "supporting_transaction_ids": list(item.supporting_transaction_ids),
                 }
                 for item in find_recurring_candidates(database_path)
+            ],
+            "price_changes": [
+                {
+                    "merchant": item.merchant,
+                    "old_amount": _money(item.old_amount_minor),
+                    "new_amount": _money(item.new_amount_minor),
+                    "changed_on": item.changed_on,
+                    "observations_before": item.observations_before,
+                    "observations_after": item.observations_after,
+                    "confidence": item.confidence,
+                    "supporting_transaction_ids": list(item.supporting_transaction_ids),
+                }
+                for item in find_recurring_price_changes(database_path)
+            ],
+        }
+
+    @app.post("/api/recurring/decision")
+    def recurring_decision(body: RecurringDecisionBody) -> dict[str, object]:
+        try:
+            decide_recurring(database_path, body.merchant, body.decision)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "saved"}
+
+    @app.post("/api/ask")
+    def ask(body: AskBody) -> dict[str, object]:
+        month = body.month or date.today().strftime("%Y-%m")
+        try:
+            answer = ask_financial_question(database_path, body.question, month)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "text": answer.text,
+            "intent": answer.intent,
+            "period": {"start": answer.start_date, "end": answer.end_date},
+            "metric": answer.metric,
+            "category_keys": list(answer.category_keys),
+            "merchant": answer.merchant,
+            "confidence": answer.confidence,
+            "uncertainty": answer.uncertainty,
+        }
+
+    @app.get("/api/imports")
+    def imports() -> dict[str, object]:
+        return {
+            "imports": [
+                {
+                    "id": item.import_id,
+                    "source_format": item.source_format,
+                    "encoding": item.encoding,
+                    "transaction_count": item.transaction_count,
+                    "inserted_count": item.inserted_count,
+                    "exact_duplicate_count": item.exact_duplicate_count,
+                    "possible_duplicate_count": item.possible_duplicate_count,
+                    "status": item.status,
+                    "created_at": item.created_at,
+                }
+                for item in list_import_batches(database_path)
             ]
         }
+
+    @app.post("/api/imports/{import_id}/undo")
+    def import_undo(import_id: str, confirm: bool = False) -> dict[str, object]:
+        try:
+            deleted = undo_import_batch(database_path, import_id, confirm=confirm)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "undone", "deleted": deleted}
+
+    @app.get("/api/integrity")
+    def integrity() -> dict[str, object]:
+        return check_database_integrity(database_path)
 
     @app.get("/", response_class=FileResponse)
     def dashboard() -> Path:
