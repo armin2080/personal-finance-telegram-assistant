@@ -7,7 +7,7 @@ import shutil
 import sqlite3
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -24,6 +24,8 @@ from personal_finance_assistant.domain import (
     FinancialOverview,
     ImportBatchInfo,
     ImportResult,
+    ImportRowOverride,
+    ImportRowPreview,
     LedgerReconciliation,
     MerchantEntityInfo,
     MerchantResolution,
@@ -443,6 +445,7 @@ class Database:
         *,
         account_alias: str = "primary",
         accept_possible_duplicates: bool = False,
+        overrides: Mapping[int, ImportRowOverride] | None = None,
     ) -> ImportResult:
         """Persist an import atomically and keep possible duplicates resumable.
 
@@ -454,6 +457,7 @@ class Database:
 
         self.initialize()
         self.ensure_write_capacity()
+        overrides_by_row = dict(overrides or {})
         now = datetime.now(UTC).isoformat()
 
         with self.session() as connection:
@@ -474,7 +478,7 @@ class Database:
                         status=str(existing_file["status"]),
                     )
                 inserted = self._accept_pending_duplicates(
-                    connection, parsed, existing_file["id"], account_alias, now
+                    connection, parsed, existing_file["id"], account_alias, now, overrides_by_row
                 )
                 connection.execute(
                     """UPDATE imports
@@ -532,7 +536,13 @@ class Database:
                         if not accept_possible_duplicates:
                             continue
                     seen_content.add(transaction.dedupe_key)
-                if self._insert_transaction(connection, transaction, import_id, account_alias, now):
+                transaction_id = self._insert_transaction(
+                    connection, transaction, import_id, account_alias, now
+                )
+                if transaction_id is not None:
+                    override = overrides_by_row.get(transaction.row_number)
+                    if override is not None:
+                        self._apply_import_override(connection, transaction_id, override, now)
                     inserted += 1
 
             accepted = accept_possible_duplicates and possible_duplicates > 0
@@ -559,6 +569,7 @@ class Database:
         import_id: str,
         account_alias: str,
         now: str,
+        overrides: Mapping[int, ImportRowOverride],
     ) -> int:
         """Insert rows that a previous run of the same file held back."""
 
@@ -583,7 +594,13 @@ class Database:
             )
             if occurrences_in_batch > occurrences_in_file:
                 continue
-            if self._insert_transaction(connection, transaction, import_id, account_alias, now):
+            transaction_id = self._insert_transaction(
+                connection, transaction, import_id, account_alias, now
+            )
+            if transaction_id is not None:
+                override = overrides.get(transaction.row_number)
+                if override is not None:
+                    self._apply_import_override(connection, transaction_id, override, now)
                 inserted += 1
         return inserted
 
@@ -594,7 +611,8 @@ class Database:
         import_id: str,
         account_alias: str,
         now: str,
-    ) -> bool:
+    ) -> str:
+        transaction_id = _new_id("txn")
         resolution_merchant = self._resolve_merchant(connection, transaction.merchant_candidate)
         classification = self._resolve_classification(connection, transaction, resolution_merchant)
         review_status = (
@@ -615,7 +633,7 @@ class Database:
                 note, evidence
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)""",
             (
-                _new_id("txn"),
+                transaction_id,
                 import_id,
                 account_alias,
                 transaction.booking_date.isoformat(),
@@ -642,7 +660,7 @@ class Database:
                 classification.evidence,
             ),
         )
-        return True
+        return transaction_id
 
     @staticmethod
     def _resolve_merchant(connection: sqlite3.Connection, candidate: str) -> MerchantResolution:
@@ -804,6 +822,149 @@ class Database:
             reference_matches=reference_matches,
             possible_duplicates=tuple(possible_duplicates),
         )
+
+    def preview_import_rows(
+        self, parsed: ParseResult, *, account_alias: str = "primary"
+    ) -> tuple[tuple[ImportRowPreview, ...], DuplicateReview]:
+        """Return per-row deterministic suggestions without writing financial data."""
+
+        self.initialize()
+        duplicate_review = self.review_import(parsed, account_alias=account_alias)
+        possible_by_row = {
+            row_number: reason for row_number, reason in duplicate_review.possible_duplicates
+        }
+        rows: list[ImportRowPreview] = []
+        with self.session() as connection:
+            for transaction in parsed.transactions:
+                merchant = self._resolve_merchant(connection, transaction.merchant_candidate)
+                classification = self._resolve_classification(connection, transaction, merchant)
+                if transaction.dedupe_basis == "reference":
+                    exists = (
+                        connection.execute(
+                            """SELECT 1 FROM transactions
+                               WHERE account_alias = ? AND dedupe_key = ? LIMIT 1""",
+                            (account_alias, transaction.dedupe_key),
+                        ).fetchone()
+                        is not None
+                    )
+                    duplicate_reason: str | None = "reference_match_existing" if exists else None
+                else:
+                    duplicate_reason = possible_by_row.get(transaction.row_number)
+                review_required = not (
+                    classification.classification_source == "user"
+                    or classification.category_source == "user"
+                    or _auto_confirmed(classification)
+                )
+                rows.append(
+                    ImportRowPreview(
+                        row_number=transaction.row_number,
+                        booking_date=transaction.booking_date,
+                        value_date=transaction.value_date,
+                        booking_text=transaction.booking_text,
+                        purpose=transaction.purpose,
+                        counterparty=transaction.counterparty,
+                        amount_minor=transaction.amount_minor,
+                        currency=transaction.currency,
+                        payment_channel=transaction.payment_channel,
+                        merchant=merchant.merchant,
+                        merchant_source=merchant.source,
+                        merchant_confidence=merchant.confidence,
+                        classification=classification.classification,
+                        classification_source=classification.classification_source,
+                        classification_confidence=classification.classification_confidence,
+                        category_key=classification.category_key,
+                        category_source=classification.category_source,
+                        category_confidence=classification.category_confidence,
+                        review_required=review_required,
+                        duplicate_reason=duplicate_reason,
+                        evidence=classification.evidence,
+                    )
+                )
+        return tuple(rows), duplicate_review
+
+    def _apply_import_override(
+        self,
+        connection: sqlite3.Connection,
+        transaction_id: str,
+        override: ImportRowOverride,
+        now: str,
+    ) -> None:
+        """Apply explicit owner edits during the same import transaction."""
+
+        if override.merchant is not None:
+            merchant = " ".join(override.merchant.split()).strip()
+            if not merchant:
+                raise ValueError("merchant override must not be empty")
+            connection.execute(
+                """INSERT INTO transaction_corrections
+                   (id, transaction_id, merchant, created_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(transaction_id) DO UPDATE SET
+                     merchant = excluded.merchant,
+                     created_at = excluded.created_at""",
+                (str(uuid.uuid4()), transaction_id, merchant, now),
+            )
+            existing_entity = connection.execute(
+                "SELECT 1 FROM merchant_entities WHERE canonical_name = ?", (merchant,)
+            ).fetchone()
+            if existing_entity is None:
+                connection.execute(
+                    "INSERT INTO merchant_entities (id, canonical_name, created_at) "
+                    "VALUES (?, ?, ?)",
+                    (str(uuid.uuid4()), merchant, now),
+                )
+            connection.execute(
+                """UPDATE transactions
+                   SET merchant_candidate = ?, merchant_source = 'user',
+                       merchant_confidence = 1
+                   WHERE id = ?""",
+                (merchant, transaction_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                   (id, event_type, entity_type, entity_id, created_at)
+                   VALUES (?, 'merchant_correction', 'transaction', ?, ?)""",
+                (str(uuid.uuid4()), transaction_id, now),
+            )
+        if override.classification is not None or override.category_key is not None:
+            if (
+                override.classification is not None
+                and override.classification not in _ALLOWED_CLASSIFICATIONS
+            ):
+                raise ValueError("classification override is not allowed")
+            if override.category_key is not None and override.category_key not in CATEGORY_REGISTRY:
+                raise ValueError("category override is not in the registry")
+            if override.classification is not None:
+                connection.execute(
+                    """UPDATE transactions
+                       SET classification = ?, classification_source = 'user',
+                           classification_confidence = 1
+                       WHERE id = ?""",
+                    (override.classification, transaction_id),
+                )
+            if override.category_key is not None:
+                connection.execute(
+                    """UPDATE transactions
+                       SET category_key = ?, category_source = 'user',
+                           category_confidence = 1
+                       WHERE id = ?""",
+                    (override.category_key, transaction_id),
+                )
+            connection.execute(
+                "UPDATE transactions SET review_status = 'confirmed' WHERE id = ?",
+                (transaction_id,),
+            )
+            connection.execute(
+                """INSERT INTO audit_events
+                   (id, event_type, entity_type, entity_id, created_at)
+                   VALUES (?, 'classification_correction', 'transaction', ?, ?)""",
+                (str(uuid.uuid4()), transaction_id, now),
+            )
+        if override.note is not None:
+            note = " ".join(override.note.split()).strip()[:1000]
+            connection.execute(
+                "UPDATE transactions SET note = ? WHERE id = ?", (note, transaction_id)
+            )
 
     def list_imports(self) -> tuple[ImportBatchInfo, ...]:
         """Return safe aggregate information for all persisted import batches."""

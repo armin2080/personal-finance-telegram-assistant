@@ -243,14 +243,9 @@ def _dedupe_data(
     return _digest(material), "content"
 
 
-def parse_sparkasse_csv(path: str | Path) -> ParseResult:
-    """Read and validate a Sparkasse CSV-CAMT V8-style export."""
+def parse_sparkasse_csv_bytes(raw: bytes) -> ParseResult:
+    """Validate a Sparkasse CSV-CAMT V8-style export from memory."""
 
-    source_path = Path(path)
-    try:
-        raw = source_path.read_bytes()
-    except OSError as exc:
-        raise ImportValidationError(f"cannot read input file: {exc}") from exc
     if not raw:
         raise ImportValidationError("input file is empty")
 
@@ -376,3 +371,14 @@ def parse_sparkasse_csv(path: str | Path) -> ParseResult:
         transactions=tuple(transactions),
         encoding=encoding,
     )
+
+
+def parse_sparkasse_csv(path: str | Path) -> ParseResult:
+    """Read and validate a Sparkasse CSV-CAMT V8-style export from a file."""
+
+    source_path = Path(path)
+    try:
+        raw = source_path.read_bytes()
+    except OSError as exc:
+        raise ImportValidationError(f"cannot read input file: {exc}") from exc
+    return parse_sparkasse_csv_bytes(raw)

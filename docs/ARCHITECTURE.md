@@ -72,7 +72,10 @@ Loopback web dashboard -> same application services
   binds to loopback by default, exposes read and owner-management endpoints over
   the application services, and performs no independent financial calculations.
   The presentation uses dependency-light HTML/CSS/JS with interactive SVG charts;
-  financial values, shares and projections are computed server-side.
+  financial values, shares and projections are computed server-side. The same
+  adapter offers a mobile-first CSV import preview/commit flow; uploads are parsed
+  locally, previews expire, and the source file is not retained after the request
+  or sent to Telegram.
 - A future Telegram Mini App requires a separate authentication and threat-model
   decision; it must not be inferred from the local dashboard.
 

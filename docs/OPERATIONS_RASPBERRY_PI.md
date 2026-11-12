@@ -259,6 +259,17 @@ cockpit to every device in that tailnet; prefer the SSH tunnel unless the
 tailnet and its devices are fully trusted. Never enable Telegram inline mode,
 a Web App/Mini App, or a public webhook for cockpit access.
 
+### Web statement import
+
+The cockpit can preview and import a Sparkasse CSV without the CLI. Open
+**Import**, choose the file, review each suggested merchant/category/type, edit
+ambiguous rows (for example PayPal descriptors), then commit. The parsed preview
+is held in memory for 30 minutes, is limited to 10 MB, and is never sent to
+Telegram or an external service. The uploaded source is not retained after the
+request. Exact-file protection and possible-duplicate review remain in force;
+possible duplicates are skipped unless explicitly included. Use this flow only
+through the private loopback/Tailscale path.
+
 The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
 busy timeout allow concurrent reads and short writes. Keep both writing paths
 (corrections, budgets, imports) short.

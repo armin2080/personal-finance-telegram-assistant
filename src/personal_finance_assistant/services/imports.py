@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from personal_finance_assistant.domain import ImportBatchInfo, ImportBatchPreview, ParseResult
+from personal_finance_assistant.domain import (
+    DuplicateReview,
+    ImportBatchInfo,
+    ImportBatchPreview,
+    ImportResult,
+    ImportRowOverride,
+    ImportRowPreview,
+    ParseResult,
+)
 
 
 def build_import_preview(parsed: ParseResult) -> ImportBatchPreview:
@@ -30,6 +38,32 @@ def build_import_preview(parsed: ParseResult) -> ImportBatchPreview:
         content_dedupe_count=sum(
             transaction.dedupe_basis == "content" for transaction in parsed.transactions
         ),
+    )
+
+
+def preview_import_rows(
+    database_path: str | Path, parsed: ParseResult, *, account_alias: str = "primary"
+) -> tuple[tuple[ImportRowPreview, ...], DuplicateReview]:
+    from personal_finance_assistant.storage.sqlite import Database
+
+    return Database(database_path).preview_import_rows(parsed, account_alias=account_alias)
+
+
+def commit_import(
+    database_path: str | Path,
+    parsed: ParseResult,
+    *,
+    accept_possible_duplicates: bool = False,
+    overrides: dict[int, ImportRowOverride] | None = None,
+    account_alias: str = "primary",
+) -> ImportResult:
+    from personal_finance_assistant.storage.sqlite import Database
+
+    return Database(database_path).import_file(
+        parsed,
+        account_alias=account_alias,
+        accept_possible_duplicates=accept_possible_duplicates,
+        overrides=overrides,
     )
 
 

@@ -21,6 +21,7 @@
       <button class="navlink" data-section="analytics">Analytics</button>
       <button class="navlink" data-section="budgets">Budgets</button>
       <button class="navlink" data-section="transactions">Transactions</button>
+      <button class="navlink" data-section="import">Import</button>
       <button class="navlink" data-section="review">Review <span id="review-count" class="pill" hidden>0</span></button>
       <button class="navlink" data-section="merchants">Merchants &amp; rules</button>
       <button class="navlink" data-section="insights">Insights</button>
@@ -199,6 +200,51 @@
         <section class="panel" id="tx-editor" hidden>
           <div class="panel-heading"><div><p class="eyebrow">CORRECT</p><h2>Transaction editor</h2></div><button id="tx-editor-close" class="button">Close</button></div>
           <div id="tx-editor-body"></div>
+        </section>
+      </div>
+
+      <!-- Import -->
+      <div class="section" id="section-import">
+        <section class="panel import-upload-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">STATEMENT IMPORT</p><h2>Upload a bank export</h2></div>
+            <span class="badge">Local only</span>
+          </div>
+          <p class="muted">CSV only. The file is parsed on this Pi. No transaction data is sent to Telegram or an external service.</p>
+          <form id="import-form" class="form">
+            <label class="file-drop" for="import-file">
+              <span class="file-drop-title">Choose a CSV file</span>
+              <span id="import-file-label" class="muted">Sparkasse CSV-CAMT V8 export</span>
+              <input id="import-file" type="file" accept=".csv,text/csv" required>
+            </label>
+            <button class="button button-primary" type="submit">Preview statement</button>
+          </form>
+          <div id="import-progress" class="notice" hidden></div>
+          <div id="import-error" class="notice notice-error" hidden role="alert"></div>
+        </section>
+
+        <section id="import-preview" hidden>
+          <div class="panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">PREVIEW</p><h2 id="import-summary-title">Review before importing</h2></div>
+              <span id="import-summary-badge" class="badge">—</span>
+            </div>
+            <div id="import-summary" class="snapshot-grid"></div>
+            <div id="import-duplicate-notice" class="notice notice-warning" hidden></div>
+            <label class="check" id="import-accept-duplicates-wrap" hidden>
+              <input id="import-accept-duplicates" type="checkbox"> Include possible duplicates
+            </label>
+            <div class="review-actions">
+              <button id="import-commit" class="button button-primary" type="button">Import rows</button>
+              <button id="import-reset" class="button" type="button">Choose another file</button>
+            </div>
+            <p class="muted">Suggestions are deterministic. Edit any row before importing. Rows marked for review remain in the Review queue.</p>
+          </div>
+          <div class="filter-row wrap import-filter">
+            <input id="import-search" type="search" placeholder="Filter merchant or description">
+            <label class="check"><input id="import-only-review" type="checkbox"> Only rows needing review</label>
+          </div>
+          <div id="import-rows" class="import-rows"></div>
         </section>
       </div>
 

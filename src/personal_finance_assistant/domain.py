@@ -89,6 +89,43 @@ class DuplicateReview:
 
 
 @dataclass(frozen=True, slots=True)
+class ImportRowPreview:
+    """One parsed row with deterministic suggestions for the import review UI."""
+
+    row_number: int
+    booking_date: date
+    value_date: date | None
+    booking_text: str
+    purpose: str
+    counterparty: str
+    amount_minor: int
+    currency: str
+    payment_channel: str
+    merchant: str
+    merchant_source: str
+    merchant_confidence: float
+    classification: str
+    classification_source: str
+    classification_confidence: float
+    category_key: str
+    category_source: str
+    category_confidence: float
+    review_required: bool
+    duplicate_reason: str | None
+    evidence: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImportRowOverride:
+    """Explicit owner edits applied to one row during import commit."""
+
+    merchant: str | None = None
+    classification: str | None = None
+    category_key: str | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ImportBatchInfo:
     """Safe aggregate information about a persisted import batch."""
 

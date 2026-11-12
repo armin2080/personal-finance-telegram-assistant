@@ -20,6 +20,7 @@ const state = {
   ids: "",
   section: "overview",
   categories: {},
+  importPreview: null,
 };
 
 const money = (value) => {
@@ -65,6 +66,14 @@ const previousMonth = (date) => new Date(date.getFullYear(), date.getMonth() - 1
 
 const monthFromDate = (dateText) => dateText.slice(0, 7);
 
+const formatApiDetail = (detail) => {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item && item.msg ? item.msg : String(item)).join("; ");
+  }
+  return "The request could not be completed.";
+};
+
 const api = async (path, options = {}) => {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -74,7 +83,7 @@ const api = async (path, options = {}) => {
     let message = `Request failed (${response.status})`;
     try {
       const body = await response.json();
-      if (body && body.detail) message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      if (body && body.detail) message = formatApiDetail(body.detail);
     } catch (error) {
       const text = await response.text();
       if (text) message = text.replace(/^\{.*"detail":"?/, "").replace(/"?\}?$/, "");
@@ -182,7 +191,7 @@ const applyHash = () => {
   if (!raw) return false;
   const [section, query] = raw.split("?");
   const parameters = new URLSearchParams(query || "");
-  state.section = ["overview", "analytics", "budgets", "transactions", "review",
+  state.section = ["overview", "analytics", "budgets", "transactions", "import", "review",
     "merchants", "insights", "ask", "settings"].includes(section) ? section : "overview";
   if (parameters.get("start")) state.start = parameters.get("start");
   if (parameters.get("end")) state.end = parameters.get("end");
@@ -886,11 +895,241 @@ const askQuestion = async (question) => {
   }
 };
 
+const IMPORT_CLASSIFICATIONS = [
+  ["expense_candidate", "Expense"],
+  ["income_candidate", "Income"],
+  ["transfer_candidate", "Transfer"],
+  ["refund_candidate", "Refund"],
+  ["reversal_candidate", "Reversal"],
+  ["fee_candidate", "Fee"],
+  ["cash_withdrawal_candidate", "Cash withdrawal"],
+  ["savings_candidate", "Savings"],
+  ["unknown", "Unknown"],
+];
+
+const importCategoryOptions = (selected) => Object.entries(state.categories)
+  .map(([key, label]) => `<option value="${escapeHtml(key)}" ${key === selected ? "selected" : ""}>${escapeHtml(label)}</option>`)
+  .join("");
+
+const importClassificationOptions = (selected) => IMPORT_CLASSIFICATIONS
+  .map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`)
+  .join("");
+
+const importClassificationLabel = (value) => {
+  const match = IMPORT_CLASSIFICATIONS.find(([key]) => key === value);
+  return match ? match[1] : value;
+};
+
+const importRowCard = (row) => `
+  <article class="import-card" data-row="${row.row_number}"
+    data-suggested-merchant="${escapeHtml(row.merchant)}"
+    data-suggested-category="${escapeHtml(row.category)}"
+    data-suggested-classification="${escapeHtml(row.classification)}"
+    data-review-required="${row.review_required ? "1" : "0"}">
+    <div class="import-card-head">
+      <div>
+        <strong>${escapeHtml(row.merchant || "Unknown merchant")}</strong>
+        <span class="muted">${escapeHtml(row.date)} · ${escapeHtml(String(row.payment_channel || "unknown").replace(/_/g, " "))}</span>
+      </div>
+      <strong class="import-amount">${money(row.amount)}</strong>
+    </div>
+    <p class="import-description">${escapeHtml(row.description || row.booking_text || "No description")}</p>
+    ${row.counterparty ? `<p class="import-counterparty">Counterparty: ${escapeHtml(row.counterparty)}</p>` : ""}
+    <p class="import-suggestion"><span class="muted">Suggested</span> ${escapeHtml(importClassificationLabel(row.classification))} → ${escapeHtml(row.category_label)} <span class="muted">${Math.round((row.category_confidence || 0) * 100)}%</span></p>
+    <div class="import-badges">
+      ${row.review_required ? '<span class="badge warning">needs review</span>' : ""}
+      ${row.duplicate_reason ? '<span class="badge warning">possible duplicate</span>' : ""}
+    </div>
+    <details class="import-edit">
+      <summary>Edit this row</summary>
+      <div class="form">
+        <label>Merchant<input data-import-field="merchant" value="${escapeHtml(row.merchant)}"></label>
+        <label>Category<select data-import-field="category">${importCategoryOptions(row.category)}</select></label>
+        <label>Type<select data-import-field="classification">${importClassificationOptions(row.classification)}</select></label>
+        <label>Note<input data-import-field="note" value=""></label>
+        <button class="button button-small" type="button" data-action="reset-import-row">Reset to suggestion</button>
+      </div>
+      <p class="muted">Why: ${escapeHtml(row.evidence || "no strong evidence")}</p>
+    </details>
+  </article>`;
+
+const filterImportRows = () => {
+  const term = $("import-search").value.trim().toLowerCase();
+  const onlyReview = $("import-only-review").checked;
+  let visible = 0;
+  document.querySelectorAll(".import-card").forEach((card) => {
+    const matchesText = !term || card.textContent.toLowerCase().includes(term);
+    const matchesReview = !onlyReview || card.dataset.reviewRequired === "1";
+    card.hidden = !(matchesText && matchesReview);
+    if (!card.hidden) visible += 1;
+  });
+  let empty = document.getElementById("import-filter-empty");
+  if (!empty) {
+    empty = document.createElement("p");
+    empty.id = "import-filter-empty";
+    empty.className = "empty";
+    empty.textContent = "No rows match this filter.";
+    $("import-rows").appendChild(empty);
+  }
+  empty.hidden = visible > 0;
+};
+
+const renderImportPreview = (payload) => {
+  state.importPreview = payload;
+  $("import-preview").hidden = false;
+  $("import-summary-title").textContent = payload.file_name;
+  const possible = payload.possible_duplicate_count || (payload.existing_import ? payload.existing_import.possible_duplicate_count : 0);
+  const fullyImported = Boolean(payload.existing_import && payload.existing_import.status === "completed" && payload.existing_import.possible_duplicate_count === 0);
+  $("import-summary-badge").textContent = fullyImported ? "Already imported" : "Ready to review";
+  $("import-summary-badge").className = fullyImported ? "badge warning" : "badge";
+  $("import-summary").innerHTML = `
+    <div><span>Rows</span><strong>${payload.transaction_count}</strong></div>
+    <div><span>Period</span><strong>${escapeHtml(payload.first_date)} → ${escapeHtml(payload.last_date)}</strong></div>
+    <div><span>Money in</span><strong>${money(payload.total_in)}</strong></div>
+    <div><span>Money out</span><strong>${money(payload.total_out)}</strong></div>
+    <div><span>Uncategorised</span><strong>${payload.uncategorized_count}</strong></div>
+    <div><span>Needs review</span><strong>${payload.review_required_count}</strong></div>
+    <div><span>Possible duplicates</span><strong>${possible}</strong></div>
+    <div><span>Exact file match</span><strong>${payload.exact_file_match ? "Yes" : "No"}</strong></div>`;
+  const notice = $("import-duplicate-notice");
+  if (fullyImported) {
+    notice.hidden = false;
+    notice.textContent = "This exact file is already fully imported. No rows will be added.";
+  } else if (payload.existing_import && payload.existing_import.possible_duplicate_count > 0) {
+    notice.hidden = false;
+    notice.textContent = `This file was partially imported. ${payload.existing_import.possible_duplicate_count} possible duplicate row(s) were skipped. Check “Include possible duplicates” and import again to add them.`;
+  } else if (possible > 0) {
+    notice.hidden = false;
+    notice.textContent = `${possible} possible duplicate row(s) were found. They are skipped unless you check “Include possible duplicates”.`;
+  } else if (payload.reference_matches > 0) {
+    notice.hidden = false;
+    notice.textContent = `${payload.reference_matches} row(s) match an existing bank reference and will be skipped.`;
+  } else {
+    notice.hidden = true;
+    notice.textContent = "";
+  }
+  $("import-accept-duplicates-wrap").hidden = possible === 0;
+  $("import-accept-duplicates").checked = Boolean(payload.existing_import && payload.existing_import.possible_duplicate_count > 0);
+  $("import-commit").disabled = fullyImported;
+  $("import-commit").textContent = fullyImported ? "Already imported" : "Import rows";
+  $("import-rows").innerHTML = payload.rows.map(importRowCard).join("");
+  $("import-search").value = "";
+  $("import-only-review").checked = false;
+  filterImportRows();
+};
+
+const resetImportPreview = () => {
+  state.importPreview = null;
+  $("import-preview").hidden = true;
+  $("import-form").reset();
+  $("import-file-label").textContent = "Sparkasse CSV-CAMT V8 export";
+  $("import-progress").hidden = true;
+  $("import-error").hidden = true;
+  $("import-commit").disabled = false;
+  $("import-commit").textContent = "Import rows";
+};
+
+const readApiError = async (response) => {
+  try {
+    const body = await response.json();
+    if (body && body.detail) return formatApiDetail(body.detail);
+  } catch (error) { /* fall through */ }
+  return `Request failed (${response.status})`;
+};
+
+const previewImportFile = async () => {
+  const file = $("import-file").files[0];
+  if (!file) throw new Error("Choose a CSV file first.");
+  $("import-error").hidden = true;
+  $("import-progress").hidden = false;
+  $("import-progress").textContent = "Parsing the statement locally…";
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/imports/preview", { method: "POST", body });
+  if (!response.ok) throw new Error(await readApiError(response));
+  const payload = await response.json();
+  $("import-progress").hidden = true;
+  renderImportPreview(payload);
+};
+
+const commitImportPreview = async () => {
+  const preview = state.importPreview;
+  if (!preview) return;
+  const overrides = [];
+  document.querySelectorAll(".import-card").forEach((card) => {
+    const merchant = card.querySelector('[data-import-field="merchant"]').value.trim();
+    const category = card.querySelector('[data-import-field="category"]').value;
+    const classification = card.querySelector('[data-import-field="classification"]').value;
+    const note = card.querySelector('[data-import-field="note"]').value.trim();
+    const override = { row_number: Number(card.dataset.row) };
+    if (merchant !== card.dataset.suggestedMerchant) override.merchant = merchant;
+    if (category !== card.dataset.suggestedCategory) override.category_key = category;
+    if (classification !== card.dataset.suggestedClassification) override.classification = classification;
+    if (note) override.note = note;
+    if (Object.keys(override).length > 1) overrides.push(override);
+  });
+  $("import-error").hidden = true;
+  $("import-progress").hidden = false;
+  $("import-progress").textContent = "Importing into the local database…";
+  $("import-commit").disabled = true;
+  try {
+    const result = await api("/api/imports/commit", {
+      method: "POST",
+      body: JSON.stringify({
+        preview_id: preview.preview_id,
+        accept_possible_duplicates: $("import-accept-duplicates").checked,
+        overrides,
+      }),
+    });
+    let message = result.inserted ? `Imported ${result.inserted} row(s).` : "No rows were added.";
+    if (result.exact_duplicates) message += ` ${result.exact_duplicates} exact duplicate(s) skipped.`;
+    if (result.possible_duplicates) message += ` ${result.possible_duplicates} possible duplicate(s) skipped.`;
+    if (result.already_imported_file && !result.inserted) message = "This exact file was already imported; no rows were added.";
+    $("import-progress").textContent = message;
+    $("import-progress").className = result.possible_duplicates ? "notice notice-warning" : "notice";
+    if (result.possible_duplicates) {
+      $("import-duplicate-notice").hidden = false;
+      $("import-duplicate-notice").textContent = `${result.possible_duplicates} possible duplicate row(s) were skipped. Check “Include possible duplicates” and import again to add them.`;
+      $("import-accept-duplicates-wrap").hidden = false;
+      $("import-accept-duplicates").checked = true;
+      $("import-commit").disabled = false;
+      $("import-commit").textContent = "Add skipped duplicates";
+    } else {
+      $("import-commit").textContent = "Imported";
+      $("import-commit").disabled = true;
+    }
+    await Promise.all([loadHealth(), loadImports(), loadOverview(), loadReview()]);
+  } catch (error) {
+    $("import-error").hidden = false;
+    $("import-error").textContent = error.message;
+    $("import-commit").disabled = false;
+    $("import-commit").textContent = "Import rows";
+  }
+};
+
 const bindEvents = () => {
   document.querySelectorAll(".navlink").forEach((button) => {
     button.addEventListener("click", () => showSection(button.dataset.section));
   });
   $("refresh").addEventListener("click", refreshAll);
+  $("import-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await previewImportFile();
+    } catch (error) {
+      $("import-progress").hidden = true;
+      $("import-error").hidden = false;
+      $("import-error").textContent = error.message;
+    }
+  });
+  $("import-file").addEventListener("change", () => {
+    const file = $("import-file").files[0];
+    $("import-file-label").textContent = file ? file.name : "Sparkasse CSV-CAMT V8 export";
+  });
+  $("import-commit").addEventListener("click", commitImportPreview);
+  $("import-reset").addEventListener("click", resetImportPreview);
+  $("import-search").addEventListener("input", filterImportRows);
+  $("import-only-review").addEventListener("change", filterImportRows);
   $("search-button").addEventListener("click", () => { state.search = $("search").value; loadOverviewTransactions(); });
   $("search").addEventListener("keydown", (event) => {
     if (event.key === "Enter") { state.search = $("search").value; loadOverviewTransactions(); }
@@ -1011,6 +1250,15 @@ const bindEvents = () => {
     if (!target) return;
     const action = target.dataset.action;
     if (action === "open-tx" || action === "edit-tx") { event.preventDefault(); openEditor(target.dataset.id); }
+    if (action === "reset-import-row") {
+      event.preventDefault();
+      const card = target.closest(".import-card");
+      if (!card) return;
+      card.querySelector('[data-import-field="merchant"]').value = card.dataset.suggestedMerchant;
+      card.querySelector('[data-import-field="category"]').value = card.dataset.suggestedCategory;
+      card.querySelector('[data-import-field="classification"]').value = card.dataset.suggestedClassification;
+      card.querySelector('[data-import-field="note"]').value = "";
+    }
     if (action === "save-review") { event.preventDefault(); saveReview(target.dataset.id); }
     if (action === "confirm-tx") { event.preventDefault(); quickAction(target.dataset.id, "confirm"); }
     if (action === "undo-tx") { event.preventDefault(); quickAction(target.dataset.id, "undo"); }

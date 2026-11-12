@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from personal_finance_assistant.domain import ParseResult
+from personal_finance_assistant.domain import ImportRowOverride, ParseResult
 from personal_finance_assistant.ingestion.sparkasse_csv import parse_sparkasse_csv
 from personal_finance_assistant.storage.sqlite import Database
 
@@ -19,6 +19,73 @@ def test_import_is_idempotent_for_same_file(tmp_path: Path) -> None:
     assert first.inserted == 5
     assert second.already_imported_file is True
     assert second.inserted == 0
+
+
+def test_import_row_overrides_are_applied_atomically(tmp_path: Path) -> None:
+    parsed = parse_sparkasse_csv(FIXTURE)
+    target = parsed.transactions[0]
+    database_path = tmp_path / "finance.sqlite3"
+    database = Database(database_path)
+
+    result = database.import_file(
+        parsed,
+        overrides={
+            target.row_number: ImportRowOverride(
+                merchant="Ravi",
+                classification="expense_candidate",
+                category_key="food.restaurants",
+                note="lunch",
+            )
+        },
+    )
+
+    assert result.inserted == 5
+    with database.session() as connection:
+        row = connection.execute(
+            """SELECT merchant_candidate, merchant_source, classification,
+                      classification_source, category_key, category_source,
+                      category_confidence, review_status, note
+               FROM transactions WHERE import_id = ? AND dedupe_key = ?""",
+            (result.import_id, target.dedupe_key),
+        ).fetchone()
+        correction = connection.execute(
+            "SELECT merchant FROM transaction_corrections WHERE transaction_id = "
+            "(SELECT id FROM transactions WHERE import_id = ? AND dedupe_key = ?)",
+            (result.import_id, target.dedupe_key),
+        ).fetchone()
+        user_rows = connection.execute(
+            "SELECT COUNT(*) FROM transactions WHERE category_source = 'user'"
+        ).fetchone()[0]
+
+    assert tuple(row) == (
+        "Ravi",
+        "user",
+        "expense_candidate",
+        "user",
+        "food.restaurants",
+        "user",
+        1.0,
+        "confirmed",
+        "lunch",
+    )
+    assert correction["merchant"] == "Ravi"
+    assert user_rows == 1
+
+
+def test_invalid_import_override_rolls_back_the_whole_import(tmp_path: Path) -> None:
+    parsed = parse_sparkasse_csv(FIXTURE)
+    database = Database(tmp_path / "finance.sqlite3")
+
+    with pytest.raises(ValueError, match="category override is not in the registry"):
+        database.import_file(
+            parsed,
+            overrides={
+                parsed.transactions[0].row_number: ImportRowOverride(category_key="not-a-category")
+            },
+        )
+
+    assert database.list_imports() == ()
+    assert database.health_status()["transactions"] == 0
 
 
 def test_database_does_not_store_account_iban_or_bic(tmp_path: Path) -> None:
@@ -517,3 +584,39 @@ def test_database_refuses_a_newer_schema_version(tmp_path: Path) -> None:
         assert "newer than this app supports" in str(exc)
     else:
         raise AssertionError("newer schema version should be rejected")
+
+
+def test_identical_content_rows_can_have_distinct_overrides(tmp_path: Path) -> None:
+    parsed = parse_sparkasse_csv(FIXTURE)
+    first = replace(
+        parsed.transactions[0],
+        dedupe_basis="content",
+        dedupe_key="same-content-key",
+        row_number=2,
+    )
+    second = replace(first, row_number=3)
+    database = Database(tmp_path / "finance.sqlite3")
+
+    result = database.import_file(
+        ParseResult(
+            source_format=parsed.source_format,
+            file_sha256="distinct-override-file",
+            transactions=(first, second),
+            encoding=parsed.encoding,
+        ),
+        accept_possible_duplicates=True,
+        overrides={
+            2: ImportRowOverride(merchant="First Merchant", category_key="food.coffee"),
+            3: ImportRowOverride(merchant="Second Merchant", category_key="shopping.general"),
+        },
+    )
+
+    assert result.inserted == 2
+    with database.session() as connection:
+        rows = connection.execute(
+            "SELECT merchant_candidate, category_key FROM transactions ORDER BY merchant_candidate"
+        ).fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("First Merchant", "food.coffee"),
+        ("Second Merchant", "shopping.general"),
+    ]

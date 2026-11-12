@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from threading import Lock
+from time import monotonic
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from personal_finance_assistant.categories import CATEGORY_REGISTRY, category_label
-from personal_finance_assistant.domain import TransactionRecord
+from personal_finance_assistant.domain import (
+    DuplicateReview,
+    ImportRowOverride,
+    ImportRowPreview,
+    ParseResult,
+    TransactionRecord,
+)
+from personal_finance_assistant.ingestion.sparkasse_csv import (
+    ImportValidationError,
+    parse_sparkasse_csv_bytes,
+)
 from personal_finance_assistant.services.analytics import (
     check_database_integrity,
     get_financial_overview,
@@ -31,8 +45,10 @@ from personal_finance_assistant.services.budgets import (
     set_budget_alert,
 )
 from personal_finance_assistant.services.imports import (
+    commit_import,
     data_coverage,
     list_import_batches,
+    preview_import_rows,
     undo_import_batch,
 )
 from personal_finance_assistant.services.insights import (
@@ -63,6 +79,62 @@ from personal_finance_assistant.services.management import (
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
+MAX_IMPORT_BYTES = 10 * 1024 * 1024
+IMPORT_PREVIEW_TTL_SECONDS = 30 * 60
+MAX_IMPORT_PREVIEWS = 4
+
+
+@dataclass(slots=True)
+class _ImportPreview:
+    parsed: ParseResult
+    rows: tuple[ImportRowPreview, ...]
+    duplicate_review: DuplicateReview
+    file_name: str
+    created_at: float
+
+
+_IMPORT_PREVIEWS: dict[str, _ImportPreview] = {}
+_IMPORT_PREVIEWS_LOCK = Lock()
+
+
+def _prune_import_previews(now: float) -> None:
+    expired = [
+        preview_id
+        for preview_id, preview in _IMPORT_PREVIEWS.items()
+        if now - preview.created_at > IMPORT_PREVIEW_TTL_SECONDS
+    ]
+    for preview_id in expired:
+        _IMPORT_PREVIEWS.pop(preview_id, None)
+    while len(_IMPORT_PREVIEWS) > MAX_IMPORT_PREVIEWS:
+        oldest = min(_IMPORT_PREVIEWS, key=lambda item: _IMPORT_PREVIEWS[item].created_at)
+        _IMPORT_PREVIEWS.pop(oldest, None)
+
+
+def _store_import_preview(
+    parsed: ParseResult,
+    rows: tuple[ImportRowPreview, ...],
+    duplicate_review: DuplicateReview,
+    file_name: str,
+) -> str:
+    preview_id = uuid4().hex
+    now = monotonic()
+    with _IMPORT_PREVIEWS_LOCK:
+        _prune_import_previews(now)
+        _IMPORT_PREVIEWS[preview_id] = _ImportPreview(
+            parsed=parsed,
+            rows=rows,
+            duplicate_review=duplicate_review,
+            file_name=file_name,
+            created_at=now,
+        )
+    return preview_id
+
+
+def _get_import_preview(preview_id: str) -> _ImportPreview | None:
+    now = monotonic()
+    with _IMPORT_PREVIEWS_LOCK:
+        _prune_import_previews(now)
+        return _IMPORT_PREVIEWS.get(preview_id)
 
 
 def _parse_date(value: str, field: str) -> date:
@@ -106,6 +178,46 @@ def _transaction_payload(record: TransactionRecord) -> dict[str, object]:
             {"key": key, "label": category_label(key)} for key in record.split_categories
         ],
     }
+
+
+def _import_row_payload(row: ImportRowPreview) -> dict[str, object]:
+    return {
+        "row_number": row.row_number,
+        "date": row.booking_date.isoformat(),
+        "value_date": row.value_date.isoformat() if row.value_date else None,
+        "amount": _money(row.amount_minor),
+        "booking_text": row.booking_text,
+        "description": row.purpose,
+        "counterparty": row.counterparty,
+        "merchant": row.merchant,
+        "merchant_source": row.merchant_source,
+        "merchant_confidence": row.merchant_confidence,
+        "classification": row.classification,
+        "classification_source": row.classification_source,
+        "classification_confidence": row.classification_confidence,
+        "category": row.category_key,
+        "category_label": category_label(row.category_key),
+        "category_source": row.category_source,
+        "category_confidence": row.category_confidence,
+        "review_required": row.review_required,
+        "duplicate_reason": row.duplicate_reason,
+        "payment_channel": row.payment_channel,
+        "evidence": row.evidence,
+    }
+
+
+class ImportRowOverrideBody(BaseModel):
+    row_number: int
+    merchant: str | None = None
+    classification: str | None = None
+    category_key: str | None = None
+    note: str | None = None
+
+
+class ImportCommitBody(BaseModel):
+    preview_id: str
+    accept_possible_duplicates: bool = False
+    overrides: list[ImportRowOverrideBody] = Field(default_factory=list)
 
 
 class CorrectBody(BaseModel):
@@ -785,6 +897,115 @@ def create_app(database_path: str | Path) -> FastAPI:
             "merchant": answer.merchant,
             "confidence": answer.confidence,
             "uncertainty": answer.uncertainty,
+        }
+
+    @app.post("/api/imports/preview")
+    def import_preview(file: Annotated[UploadFile, File()]) -> dict[str, object]:
+        file_name = Path(file.filename or "statement.csv").name[:120]
+        if not file_name.lower().endswith((".csv", ".txt")):
+            raise HTTPException(status_code=400, detail="Upload a .csv file exported by your bank.")
+        raw = file.file.read(MAX_IMPORT_BYTES + 1)
+        if len(raw) > MAX_IMPORT_BYTES:
+            raise HTTPException(status_code=413, detail="The file is larger than 10 MB.")
+        try:
+            parsed = parse_sparkasse_csv_bytes(raw)
+        except ImportValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        rows, duplicate_review = preview_import_rows(database_path, parsed)
+        existing = next(
+            (
+                item
+                for item in list_import_batches(database_path)
+                if item.file_sha256 == parsed.file_sha256
+            ),
+            None,
+        )
+        preview_id = _store_import_preview(parsed, rows, duplicate_review, file_name)
+        total_in = sum(item.amount_minor for item in parsed.transactions if item.amount_minor > 0)
+        total_out = -sum(item.amount_minor for item in parsed.transactions if item.amount_minor < 0)
+        return {
+            "preview_id": preview_id,
+            "file_name": file_name,
+            "source_format": parsed.source_format,
+            "encoding": parsed.encoding,
+            "transaction_count": len(parsed.transactions),
+            "first_date": min(item.booking_date for item in parsed.transactions).isoformat(),
+            "last_date": max(item.booking_date for item in parsed.transactions).isoformat(),
+            "total_in": _money(total_in),
+            "total_out": _money(total_out),
+            "uncategorized_count": sum(1 for row in rows if row.category_key == "uncategorized"),
+            "review_required_count": sum(1 for row in rows if row.review_required),
+            "exact_file_match": duplicate_review.exact_file_match,
+            "reference_matches": duplicate_review.reference_matches,
+            "possible_duplicate_count": len(duplicate_review.possible_duplicates),
+            "existing_import": (
+                {
+                    "import_id": existing.import_id,
+                    "inserted_count": existing.inserted_count,
+                    "exact_duplicate_count": existing.exact_duplicate_count,
+                    "possible_duplicate_count": existing.possible_duplicate_count,
+                    "status": existing.status,
+                }
+                if existing
+                else None
+            ),
+            "rows": [_import_row_payload(row) for row in rows],
+        }
+
+    @app.post("/api/imports/commit")
+    def import_commit(body: ImportCommitBody) -> dict[str, object]:
+        preview = _get_import_preview(body.preview_id)
+        if preview is None:
+            raise HTTPException(
+                status_code=410, detail="Import preview expired. Upload the file again."
+            )
+        transactions_by_row = {
+            transaction.row_number: transaction for transaction in preview.parsed.transactions
+        }
+        overrides: dict[int, ImportRowOverride] = {}
+        for item in body.overrides:
+            transaction = transactions_by_row.get(item.row_number)
+            if transaction is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Row {item.row_number} is not part of this import.",
+                )
+            merchant = item.merchant.strip() if item.merchant and item.merchant.strip() else None
+            classification = (
+                item.classification.strip()
+                if item.classification and item.classification.strip()
+                else None
+            )
+            category = (
+                item.category_key.strip()
+                if item.category_key and item.category_key.strip()
+                else None
+            )
+            note = item.note.strip() if item.note and item.note.strip() else None
+            if merchant is None and classification is None and category is None and note is None:
+                continue
+            overrides[transaction.row_number] = ImportRowOverride(
+                merchant=merchant,
+                classification=classification,
+                category_key=category,
+                note=note,
+            )
+        try:
+            result = commit_import(
+                database_path,
+                preview.parsed,
+                accept_possible_duplicates=body.accept_possible_duplicates,
+                overrides=overrides,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "import_id": result.import_id,
+            "inserted": result.inserted,
+            "exact_duplicates": result.exact_duplicates,
+            "possible_duplicates": result.possible_duplicates,
+            "status": result.status,
+            "already_imported_file": result.already_imported_file,
         }
 
     @app.get("/api/imports")

@@ -194,3 +194,37 @@ tr.clickable:hover { background: rgba(122, 167, 255, 0.06); }
   .form.inline input { width: 100%; }
   .pager { justify-content: space-between; }
 }
+
+/* Import review */
+.import-upload-panel { max-width: 780px; }
+.file-drop {
+  display: flex; flex-direction: column; gap: 6px; padding: 18px;
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface-2); cursor: pointer;
+}
+.file-drop:hover { border-color: var(--accent-2); }
+.file-drop-title { font-weight: 650; }
+.file-drop input[type="file"] { margin-top: 8px; max-width: 100%; }
+.import-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px;
+}
+.import-card[hidden] { display: none; }
+.import-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.import-card-head strong { overflow-wrap: anywhere; }
+.import-card-head .muted { display: block; margin-top: 3px; font-size: 0.78rem; }
+.import-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.import-description { color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
+.import-counterparty { color: var(--muted); font-size: 0.8rem; margin: -2px 0 8px; overflow-wrap: anywhere; }
+.import-suggestion { margin: 8px 0; font-size: 0.9rem; }
+.import-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 0; }
+.import-edit { margin-top: 10px; }
+.import-edit summary { cursor: pointer; color: var(--accent-2); padding: 6px 0; }
+.import-edit .form { margin-top: 8px; }
+.import-filter { margin: 12px 0; }
+.import-rows { display: grid; gap: 10px; }
+@media (max-width: 640px) {
+  .import-card { padding: 12px; }
+  .import-card-head { gap: 8px; }
+  .import-amount { font-size: 0.95rem; }
+}

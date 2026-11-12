@@ -113,3 +113,134 @@ def test_dashboard_exposes_merchant_and_weekly_analytics(tmp_path: Path) -> None
         "minor": 2823,
         "currency": "EUR",
     }
+
+
+def test_import_preview_and_commit_from_upload(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")},
+    )
+
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["transaction_count"] == 5
+    assert len(body["rows"]) == 5
+    assert body["rows"][0]["category"] == "transport.other"
+    assert body["existing_import"] is None
+    row = body["rows"][0]
+
+    commit = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": body["preview_id"],
+            "overrides": [
+                {
+                    "row_number": row["row_number"],
+                    "merchant": "Ravi",
+                    "classification": "expense_candidate",
+                    "category_key": "food.restaurants",
+                    "note": "lunch",
+                }
+            ],
+        },
+    )
+
+    assert commit.status_code == 200
+    assert commit.json()["inserted"] == 5
+    transactions = client.get(
+        "/api/transactions",
+        params={
+            "start": "1900-01-01",
+            "end": "2100-01-01",
+            "merchant": "Ravi",
+        },
+    ).json()
+    assert transactions["total"] == 1
+    assert transactions["transactions"][0]["category"] == "food.restaurants"
+    assert transactions["transactions"][0]["merchant_source"] == "user"
+    assert transactions["transactions"][0]["review_status"] == "confirmed"
+
+
+def test_import_preview_reports_exact_file_match_without_reimporting(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    payload = {"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")}
+
+    first = client.post("/api/imports/preview", files=payload).json()
+    client.post(
+        "/api/imports/commit",
+        json={"preview_id": first["preview_id"]},
+    )
+    second = client.post("/api/imports/preview", files=payload)
+
+    assert second.status_code == 200
+    assert second.json()["exact_file_match"] is True
+    assert second.json()["existing_import"]["inserted_count"] == 5
+    assert second.json()["existing_import"]["status"] == "completed"
+
+
+def test_import_upload_rejects_unsupported_csv_and_unknown_rows(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+
+    bad = client.post(
+        "/api/imports/preview",
+        files={"file": ("bad.csv", b"not,a,bank,export\n", "text/csv")},
+    )
+    assert bad.status_code == 400
+    assert "required column" in bad.json()["detail"]
+
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")},
+    ).json()
+    unknown = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": preview["preview_id"],
+            "overrides": [{"row_number": 999, "category_key": "food.groceries"}],
+        },
+    )
+    assert unknown.status_code == 400
+    assert "not part of this import" in unknown.json()["detail"]
+
+
+def test_possible_duplicates_can_be_resumed_from_web_preview(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+    original = FIXTURE.read_bytes()
+    first = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", original, "text/csv")},
+    ).json()
+    client.post("/api/imports/commit", json={"preview_id": first["preview_id"]})
+
+    modified = original.replace(b'"DE00000000000000000000"', b'"DE11111111111111111111"')
+    second = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement-again.csv", modified, "text/csv")},
+    ).json()
+
+    assert second["exact_file_match"] is False
+    assert second["reference_matches"] == 4
+    assert second["possible_duplicate_count"] == 1
+
+    skipped = client.post(
+        "/api/imports/commit",
+        json={"preview_id": second["preview_id"]},
+    ).json()
+    assert skipped["inserted"] == 0
+    assert skipped["possible_duplicates"] == 1
+    assert skipped["status"] == "incomplete"
+
+    resumed = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": second["preview_id"],
+            "accept_possible_duplicates": True,
+        },
+    ).json()
+    assert resumed["inserted"] == 1
+    assert resumed["possible_duplicates"] == 0
+    assert resumed["status"] == "completed"

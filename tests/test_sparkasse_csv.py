@@ -6,6 +6,7 @@ from personal_finance_assistant.ingestion.sparkasse_csv import (
     ImportValidationError,
     parse_amount_minor,
     parse_sparkasse_csv,
+    parse_sparkasse_csv_bytes,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sparkasse_sample.csv"
@@ -19,6 +20,13 @@ def test_parses_observed_csv_layout() -> None:
     assert result.transactions[3].amount_minor == 123456
     assert result.transactions[0].classification == "expense_candidate"
     assert result.transactions[3].classification == "income_candidate"
+
+
+def test_in_memory_parser_matches_file_parser() -> None:
+    from_path = parse_sparkasse_csv(FIXTURE)
+    from_bytes = parse_sparkasse_csv_bytes(FIXTURE.read_bytes())
+
+    assert from_bytes == from_path
 
 
 def test_german_and_international_decimal_formats() -> None:
