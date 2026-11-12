@@ -27,5 +27,5 @@ def test_positive_non_salary_credit_remains_uncategorized_income() -> None:
     result = classify_transaction(transaction)
 
     assert result.classification == "income_candidate"
-    assert result.category_key == "uncategorized"
-    assert result.category_source == "unreviewed"
+    assert result.category_key == "income.other"
+    assert result.category_confidence < 0.8

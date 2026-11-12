@@ -377,7 +377,7 @@ def test_health_status_contains_no_financial_values(tmp_path: Path) -> None:
 
     status = database.health_status()
 
-    assert status["schema_version"] == 5
+    assert status["schema_version"] == 6
     assert status["import_batches"] == 1
     assert status["transactions"] == 5
 

@@ -60,7 +60,12 @@ def test_month_report_reconciles_categories_and_exclusions(tmp_path: Path) -> No
     assert report.income_minor == 0
     assert report.refunds_minor == 0
     assert report.transfers_minor == 0
-    assert report.uncategorized_expenses_minor == 2823
-    assert report.category_expenses[0].category_key == "uncategorized"
-    assert report.category_expenses[0].amount_minor == 2823
+    assert report.uncategorized_expenses_minor == 0
+    categories = {item.category_key: item.amount_minor for item in report.category_expenses}
+    assert categories == {
+        "shopping.online": 1704,
+        "subscriptions.digital": 999,
+        "transport.other": 120,
+    }
+    assert report.categorized_expenses_minor == 2823
     assert report.transaction_count == 3

@@ -52,22 +52,19 @@ def test_local_question_has_allowlisted_aggregate_intents(tmp_path: Path) -> Non
     database_path = tmp_path / "finance.sqlite3"
     Database(database_path).import_file(parse_sparkasse_csv(FIXTURE))
 
-    assert "28,23 EUR" in local_question(database_path, "How much spending?", "2026-03")
-    assert "income" in local_question(database_path, "What is my income?", "2026-03")
-    assert "aggregate spending or income" in local_question(
-        database_path, "Tell me a merchant", "2026-03"
-    )
+    assert "28,23 €" in local_question(database_path, "How much spending?", "2026-03")
+    assert "Income" in local_question(database_path, "What is my income?", "2026-03")
+    assert "Merchants receiving" in local_question(database_path, "Tell me a merchant", "2026-03")
 
 
 def test_budget_recommendations_are_explainable_review_prompts(tmp_path: Path) -> None:
     database_path = tmp_path / "finance.sqlite3"
     database = Database(database_path)
     database.import_file(parse_sparkasse_csv(FIXTURE))
-    database.set_budget("2026-03", "uncategorized", 1000)
+    database.set_budget("2026-03", "shopping.online", 1000)
 
     recommendations = budget_recommendations(database_path, "2026-03", as_of=date(2026, 3, 10))
 
     assert recommendations == (
-        "Review uncategorized: projected classified spend exceeds the configured budget "
-        "under the current daily-rate assumption.",
+        "Review shopping.online: classified spend already exceeds the configured budget.",
     )
