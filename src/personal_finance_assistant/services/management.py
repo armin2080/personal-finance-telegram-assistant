@@ -172,3 +172,9 @@ def merchant_history(
         sort_dir="desc",
     )
     return records
+
+
+def reprocess_rules(database_path: str | Path) -> int:
+    """Reapply deterministic and user rules to non-user, non-dismissed rows."""
+
+    return Database(database_path).reprocess_classifications()

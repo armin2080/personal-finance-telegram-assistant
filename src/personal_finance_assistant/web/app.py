@@ -55,6 +55,7 @@ from personal_finance_assistant.services.management import (
     list_rules,
     merge_merchants,
     remove_merchant_alias,
+    reprocess_rules,
     set_merchant_default_category,
     set_transaction_note,
     split_transaction,
@@ -654,6 +655,10 @@ def create_app(database_path: str | Path) -> FastAPI:
     @app.delete("/api/rules/{rule_id}")
     def rule_delete(rule_id: str) -> dict[str, object]:
         return {"deleted": delete_rule(database_path, rule_id)}
+
+    @app.post("/api/reprocess")
+    def reprocess() -> dict[str, object]:
+        return {"updated": reprocess_rules(database_path)}
 
     @app.get("/api/budgets")
     def budgets(month: str) -> dict[str, object]:

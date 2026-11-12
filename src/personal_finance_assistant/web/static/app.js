@@ -1047,6 +1047,14 @@ const bindEvents = () => {
         renderTransactions($("merchant-history"), payload.transactions);
       } catch (error) { setError(error.message); }
     }
+    if (action === "reprocess") {
+      event.preventDefault();
+      try {
+        const result = await api("/api/reprocess", { method: "POST" });
+        await Promise.all([loadRules(), loadOverview()]);
+        setError(`Reapplied rules to ${result.updated} transaction(s).`);
+      } catch (error) { setError(error.message); }
+    }
     if (action === "delete-rule") {
       event.preventDefault();
       try {

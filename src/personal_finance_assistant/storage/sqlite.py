@@ -1467,7 +1467,8 @@ class Database:
                           counterparty, merchant_candidate, amount_minor, currency,
                           dedupe_key, dedupe_basis, payment_channel
                    FROM transactions
-                   WHERE classification_source != 'user' AND category_source != 'user'"""
+                   WHERE classification_source != 'user' AND category_source != 'user'
+                     AND review_status != 'dismissed'"""
             ).fetchall()
             for row in rows:
                 transaction = ParsedTransaction(
@@ -1499,7 +1500,8 @@ class Database:
                            review_status = ?, evidence = ?
                        WHERE id = ?
                          AND classification_source != 'user'
-                         AND category_source != 'user'""",
+                         AND category_source != 'user'
+                         AND review_status != 'dismissed'""",
                     (
                         resolution.classification,
                         resolution.classification_source,

@@ -533,6 +533,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("question")
     ask_parser.add_argument("--month")
 
+    subparsers.add_parser("reprocess", help="reapply rules to non-user transactions")
     subparsers.add_parser("integrity", help="check database and split invariants")
     return parser
 
@@ -629,6 +630,10 @@ def main() -> None:
             )
         if args.command == "ask":
             raise SystemExit(_ask(args.question, args.month))
+        if args.command == "reprocess":
+            changed = _database().reprocess_classifications()
+            print(f"Reprocessed {changed} transaction(s).")
+            return
         if args.command == "integrity":
             raise SystemExit(_integrity())
         if args.command == "bot":
