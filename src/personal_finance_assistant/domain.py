@@ -113,6 +113,8 @@ class ImportRowPreview:
     review_required: bool
     duplicate_reason: str | None
     evidence: str
+    merchant_learnable: bool = True
+    descriptor_pattern: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +125,7 @@ class ImportRowOverride:
     classification: str | None = None
     category_key: str | None = None
     note: str | None = None
+    remember: Literal["merchant", "descriptor"] | None = None
 
 
 @dataclass(frozen=True, slots=True)

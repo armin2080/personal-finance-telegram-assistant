@@ -24,14 +24,16 @@
 - Added a mobile-first web statement import: upload a Sparkasse CSV, review
   per-row merchant/category/type suggestions, edit ambiguous PayPal rows, and
   commit atomically with exact/reference/possible-duplicate warnings; uploaded
-  source bytes are not retained after the request.
+  source bytes are not retained after the request. Per-row learning creates an
+  explicit merchant alias/default category or a conservative descriptor rule,
+  with ambiguous-merchant protection.
 - Rebuilt the dashboard with nine navigable sections, interactive SVG charts,
   URL state, click drill-down, mobile transaction cards, health status and clean
   error/empty/loading states.
 - Added insight coverage for largest categories, changes, merchant
   concentration, unusual one-offs, income changes, fixed/discretionary spending,
   budget pace and recurring price changes.
-- Added 56 recovery and web-import regression tests (138 total) and documented the
+- Added 60 recovery and web-import regression tests (142 total) and documented the
   recovery baseline, semantics, rules and acceptance evidence.
 
 ## 0.1.0 — Initial project foundation

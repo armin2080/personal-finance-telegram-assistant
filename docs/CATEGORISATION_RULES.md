@@ -49,6 +49,30 @@ card fees, foreign-currency fees and restaurant memos mentioning a service fee.
 - PayPal pass-through extracts the merchant named in the purpose text. A masked
   descriptor with no merchant evidence remains `PayPal (merchant unclear)`.
 
+## Learning from import review
+
+Learning is opt-in per row in the web import flow. The owner chooses
+`This transaction only`, `Remember this merchant in future`, or
+`Remember this description in future`.
+
+- **Merchant learning** stores an exact normalised alias from the bank
+  descriptor to the chosen canonical merchant, sets that merchant's default
+  category, and creates a priority-200 user rule for the merchant. Future rows
+  with the same descriptor resolve to the learned merchant and category.
+- **Descriptor learning** extracts a short, conservative phrase from the purpose
+  (for example `steam games`), rejects reference-like and generic banking tokens,
+  and stores a priority-200 user rule. The rule is scoped to the payment channel
+  when known, which keeps PayPal descriptor learning from affecting unrelated
+  card payments. Rule matching normalises case, repeated whitespace, hyphenation
+  and punctuation, so `STEAM-GAMES` and `steam games` match the same learned
+  descriptor.
+- **Ambiguous merchants** such as `PayPal (merchant unclear)` cannot be learned
+  at merchant level, because that would apply one category to every PayPal
+  transaction. The UI requires descriptor learning instead.
+- Learned rules and aliases are visible and removable in **Merchants & rules**.
+- No automatic global rule is created without the owner selecting a learning
+  option.
+
 ## Consumer category baseline
 
 | Category | Representative evidence |

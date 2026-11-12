@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from threading import Lock
 from time import monotonic
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
@@ -203,6 +203,8 @@ def _import_row_payload(row: ImportRowPreview) -> dict[str, object]:
         "duplicate_reason": row.duplicate_reason,
         "payment_channel": row.payment_channel,
         "evidence": row.evidence,
+        "merchant_learnable": row.merchant_learnable,
+        "descriptor_pattern": row.descriptor_pattern,
     }
 
 
@@ -212,6 +214,7 @@ class ImportRowOverrideBody(BaseModel):
     classification: str | None = None
     category_key: str | None = None
     note: str | None = None
+    remember: str | None = None
 
 
 class ImportCommitBody(BaseModel):
@@ -470,7 +473,7 @@ def create_app(database_path: str | Path) -> FastAPI:
                     raise ValueError("apply_to_future requires a merchant")
                 add_rule(
                     database_path,
-                    pattern=f"merchant:{merchant}",
+                    pattern=merchant,
                     classification=body.classification or "expense_candidate",
                     category_key=body.category_key or "uncategorized",
                     merchant_pattern=merchant,
@@ -962,6 +965,7 @@ def create_app(database_path: str | Path) -> FastAPI:
         transactions_by_row = {
             transaction.row_number: transaction for transaction in preview.parsed.transactions
         }
+        preview_rows_by_number = {row.row_number: row for row in preview.rows}
         overrides: dict[int, ImportRowOverride] = {}
         for item in body.overrides:
             transaction = transactions_by_row.get(item.row_number)
@@ -969,6 +973,16 @@ def create_app(database_path: str | Path) -> FastAPI:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Row {item.row_number} is not part of this import.",
+                )
+            remember: Literal["merchant", "descriptor"] | None = None
+            if item.remember == "merchant":
+                remember = "merchant"
+            elif item.remember == "descriptor":
+                remember = "descriptor"
+            elif item.remember:
+                raise HTTPException(
+                    status_code=400,
+                    detail="remember must be merchant or descriptor.",
                 )
             merchant = item.merchant.strip() if item.merchant and item.merchant.strip() else None
             classification = (
@@ -982,13 +996,20 @@ def create_app(database_path: str | Path) -> FastAPI:
                 else None
             )
             note = item.note.strip() if item.note and item.note.strip() else None
-            if merchant is None and classification is None and category is None and note is None:
+            if (
+                merchant is None
+                and classification is None
+                and category is None
+                and note is None
+                and remember is None
+            ):
                 continue
             overrides[transaction.row_number] = ImportRowOverride(
                 merchant=merchant,
                 classification=classification,
                 category_key=category,
                 note=note,
+                remember=remember,
             )
         try:
             result = commit_import(
@@ -999,6 +1020,61 @@ def create_app(database_path: str | Path) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        learned: list[str] = []
+        learning_errors: list[str] = []
+        for item in body.overrides:
+            if item.remember not in {"merchant", "descriptor"}:
+                continue
+            transaction = transactions_by_row[item.row_number]
+            row = preview_rows_by_number[item.row_number]
+            category = (item.category_key or row.category_key).strip()
+            classification = (item.classification or row.classification).strip()
+            merchant = (item.merchant or row.merchant).strip()
+            try:
+                if category == "uncategorized":
+                    raise ValueError("choose a category before remembering this row")
+                if item.remember == "merchant":
+                    if not row.merchant_learnable:
+                        raise ValueError(
+                            "this merchant is ambiguous; remember the description instead"
+                        )
+                    add_merchant_alias(
+                        database_path,
+                        alias=transaction.merchant_candidate,
+                        canonical_name=merchant,
+                        default_category_key=category,
+                    )
+                    add_rule(
+                        database_path,
+                        pattern=merchant,
+                        classification=classification,
+                        category_key=category,
+                        merchant_pattern=merchant,
+                        priority=200,
+                        label="Learned from import review",
+                    )
+                    learned.append(f"merchant: {merchant}")
+                else:
+                    pattern = row.descriptor_pattern.strip()
+                    if not pattern:
+                        raise ValueError(
+                            "this description is too generic; remember the merchant instead"
+                        )
+                    add_rule(
+                        database_path,
+                        pattern=pattern,
+                        classification=classification,
+                        category_key=category,
+                        descriptor_pattern=pattern,
+                        payment_channel=(
+                            row.payment_channel if row.payment_channel != "unknown" else None
+                        ),
+                        priority=200,
+                        label="Learned from import review",
+                    )
+                    learned.append(f"description: {pattern}")
+            except ValueError as exc:
+                learning_errors.append(f"Row {item.row_number}: {exc}")
         return {
             "import_id": result.import_id,
             "inserted": result.inserted,
@@ -1006,6 +1082,8 @@ def create_app(database_path: str | Path) -> FastAPI:
             "possible_duplicates": result.possible_duplicates,
             "status": result.status,
             "already_imported_file": result.already_imported_file,
+            "learned": learned,
+            "learning_errors": learning_errors,
         }
 
     @app.get("/api/imports")

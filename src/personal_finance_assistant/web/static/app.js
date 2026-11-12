@@ -947,6 +947,13 @@ const importRowCard = (row) => `
         <label>Category<select data-import-field="category">${importCategoryOptions(row.category)}</select></label>
         <label>Type<select data-import-field="classification">${importClassificationOptions(row.classification)}</select></label>
         <label>Note<input data-import-field="note" value=""></label>
+        <label>Learn from this edit
+          <select data-import-field="remember">
+            <option value="">This transaction only</option>
+            <option value="merchant" ${row.merchant_learnable ? "" : "disabled"}>Remember this merchant in future</option>
+            <option value="descriptor" ${row.descriptor_pattern ? "" : "disabled"}>Remember this description in future${row.descriptor_pattern ? ` (“${escapeHtml(row.descriptor_pattern)}”)` : ""}</option>
+          </select>
+        </label>
         <button class="button button-small" type="button" data-action="reset-import-row">Reset to suggestion</button>
       </div>
       <p class="muted">Why: ${escapeHtml(row.evidence || "no strong evidence")}</p>
@@ -1061,11 +1068,13 @@ const commitImportPreview = async () => {
     const category = card.querySelector('[data-import-field="category"]').value;
     const classification = card.querySelector('[data-import-field="classification"]').value;
     const note = card.querySelector('[data-import-field="note"]').value.trim();
+    const remember = card.querySelector('[data-import-field="remember"]').value;
     const override = { row_number: Number(card.dataset.row) };
     if (merchant !== card.dataset.suggestedMerchant) override.merchant = merchant;
     if (category !== card.dataset.suggestedCategory) override.category_key = category;
     if (classification !== card.dataset.suggestedClassification) override.classification = classification;
     if (note) override.note = note;
+    if (remember) override.remember = remember;
     if (Object.keys(override).length > 1) overrides.push(override);
   });
   $("import-error").hidden = true;
@@ -1084,9 +1093,11 @@ const commitImportPreview = async () => {
     let message = result.inserted ? `Imported ${result.inserted} row(s).` : "No rows were added.";
     if (result.exact_duplicates) message += ` ${result.exact_duplicates} exact duplicate(s) skipped.`;
     if (result.possible_duplicates) message += ` ${result.possible_duplicates} possible duplicate(s) skipped.`;
+    if (result.learned && result.learned.length) message += ` Remembered ${result.learned.length} row(s) for future imports.`;
+    if (result.learning_errors && result.learning_errors.length) message += ` Learning issues: ${result.learning_errors.join("; ")}`;
     if (result.already_imported_file && !result.inserted) message = "This exact file was already imported; no rows were added.";
     $("import-progress").textContent = message;
-    $("import-progress").className = result.possible_duplicates ? "notice notice-warning" : "notice";
+    $("import-progress").className = result.possible_duplicates || (result.learning_errors && result.learning_errors.length) ? "notice notice-warning" : "notice";
     if (result.possible_duplicates) {
       $("import-duplicate-notice").hidden = false;
       $("import-duplicate-notice").textContent = `${result.possible_duplicates} possible duplicate row(s) were skipped. Check “Include possible duplicates” and import again to add them.`;
@@ -1105,6 +1116,26 @@ const commitImportPreview = async () => {
     $("import-commit").disabled = false;
     $("import-commit").textContent = "Import rows";
   }
+};
+
+const rememberEditedImportRows = () => {
+  document.querySelectorAll(".import-card").forEach((card) => {
+    const merchant = card.querySelector('[data-import-field="merchant"]').value.trim();
+    const category = card.querySelector('[data-import-field="category"]').value;
+    const classification = card.querySelector('[data-import-field="classification"]').value;
+    const note = card.querySelector('[data-import-field="note"]').value.trim();
+    const edited = merchant !== card.dataset.suggestedMerchant
+      || category !== card.dataset.suggestedCategory
+      || classification !== card.dataset.suggestedClassification
+      || Boolean(note);
+    if (!edited) return;
+    const select = card.querySelector('[data-import-field="remember"]');
+    if (!select) return;
+    const merchantOption = select.querySelector('option[value="merchant"]');
+    const descriptorOption = select.querySelector('option[value="descriptor"]');
+    if (merchantOption && !merchantOption.disabled) select.value = "merchant";
+    else if (descriptorOption && !descriptorOption.disabled) select.value = "descriptor";
+  });
 };
 
 const bindEvents = () => {
@@ -1127,6 +1158,7 @@ const bindEvents = () => {
     $("import-file-label").textContent = file ? file.name : "Sparkasse CSV-CAMT V8 export";
   });
   $("import-commit").addEventListener("click", commitImportPreview);
+  $("import-remember-edits").addEventListener("click", rememberEditedImportRows);
   $("import-reset").addEventListener("click", resetImportPreview);
   $("import-search").addEventListener("input", filterImportRows);
   $("import-only-review").addEventListener("change", filterImportRows);
@@ -1258,6 +1290,7 @@ const bindEvents = () => {
       card.querySelector('[data-import-field="category"]').value = card.dataset.suggestedCategory;
       card.querySelector('[data-import-field="classification"]').value = card.dataset.suggestedClassification;
       card.querySelector('[data-import-field="note"]').value = "";
+      card.querySelector('[data-import-field="remember"]').value = "";
     }
     if (action === "save-review") { event.preventDefault(); saveReview(target.dataset.id); }
     if (action === "confirm-tx") { event.preventDefault(); quickAction(target.dataset.id, "confirm"); }

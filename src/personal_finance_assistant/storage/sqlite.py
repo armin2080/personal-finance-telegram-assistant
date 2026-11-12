@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import re
 import shutil
 import sqlite3
 import time
@@ -44,6 +45,8 @@ from personal_finance_assistant.domain import (
 from personal_finance_assistant.ingestion.classification import classify_transaction
 from personal_finance_assistant.ingestion.merchant_resolution import (
     canonical_merchant,
+    is_ambiguous_merchant,
+    learnable_descriptor,
     normalize_alias_key,
     normalize_merchant_display,
 )
@@ -767,11 +770,18 @@ class Database:
         return bool(pattern or merchant_pattern or descriptor_pattern)
 
     @staticmethod
+    def _normalize_rule_text(value: str) -> str:
+        folded = " ".join(value.casefold().split())
+        folded = re.sub(r"(?<=\w)-(?=\w)", " ", folded)
+        folded = re.sub(r"[^\wäöüß]+", " ", folded, flags=re.UNICODE)
+        return " ".join(folded.split())
+
+    @staticmethod
     def _safe_text_match(haystack: str, needle: str) -> bool:
         from personal_finance_assistant.ingestion.classification import _phrase_present
 
-        folded = " ".join(haystack.casefold().split())
-        target = " ".join(needle.casefold().split())
+        folded = Database._normalize_rule_text(haystack)
+        target = Database._normalize_rule_text(needle)
         if not target:
             return False
         return _phrase_present(folded, target)
@@ -878,6 +888,11 @@ class Database:
                         review_required=review_required,
                         duplicate_reason=duplicate_reason,
                         evidence=classification.evidence,
+                        merchant_learnable=not is_ambiguous_merchant(transaction.merchant_candidate)
+                        and not is_ambiguous_merchant(merchant.merchant),
+                        descriptor_pattern=learnable_descriptor(
+                            transaction.purpose or transaction.counterparty
+                        ),
                     )
                 )
         return tuple(rows), duplicate_review

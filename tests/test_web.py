@@ -1,7 +1,10 @@
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from personal_finance_assistant.domain import ParseResult
 from personal_finance_assistant.ingestion.sparkasse_csv import parse_sparkasse_csv
 from personal_finance_assistant.storage.sqlite import Database
 from personal_finance_assistant.web.app import create_app
@@ -244,3 +247,188 @@ def test_possible_duplicates_can_be_resumed_from_web_preview(tmp_path: Path) -> 
     assert resumed["inserted"] == 1
     assert resumed["possible_duplicates"] == 0
     assert resumed["status"] == "completed"
+
+
+def test_import_commit_can_learn_a_merchant_for_future_imports(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    parsed = parse_sparkasse_csv(FIXTURE)
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")},
+    ).json()
+    target = preview["rows"][0]
+
+    commit = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": preview["preview_id"],
+            "overrides": [
+                {
+                    "row_number": target["row_number"],
+                    "category_key": "transport.public_transit",
+                    "classification": "expense_candidate",
+                    "remember": "merchant",
+                }
+            ],
+        },
+    )
+
+    assert commit.status_code == 200
+    assert commit.json()["learned"] == ["merchant: Test Mobility GmbH"]
+    assert commit.json()["learning_errors"] == []
+
+    original = parsed.transactions[0]
+    future = replace(
+        original,
+        booking_date=date(2026, 4, 1),
+        value_date=date(2026, 4, 1),
+        amount_minor=-777,
+        dedupe_key="future-mobility-key",
+        row_number=2,
+    )
+    rows, _ = Database(database_path).preview_import_rows(
+        ParseResult(
+            source_format=parsed.source_format,
+            file_sha256="future-file",
+            transactions=(future,),
+            encoding=parsed.encoding,
+        )
+    )
+
+    assert rows[0].merchant == "Test Mobility GmbH"
+    assert rows[0].category_key == "transport.public_transit"
+    assert rows[0].classification == "expense_candidate"
+    assert rows[0].review_required is False
+
+
+def test_import_commit_can_learn_a_descriptor_for_future_imports(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    header = (
+        '"Buchungstag";"Buchungstext";"Verwendungszweck";'
+        '"Beguenstigter/Zahlungspflichtiger";"Betrag";"Waehrung";"Info"\n'
+    )
+    first_csv = (
+        header
+        + '"10.03.26";"KARTENZAHLUNG";"PAYPAL *MERCHANT UNCLEAR STEAM GAMES";'
+        + '"PayPal";"-9,99";"EUR";"Umsatz gebucht"\n'
+    ).encode("utf-8")
+    first = client.post(
+        "/api/imports/preview",
+        files={"file": ("first.csv", first_csv, "text/csv")},
+    ).json()
+    row = first["rows"][0]
+    assert row["merchant"] == "PayPal (merchant unclear)"
+    assert row["merchant_learnable"] is False
+    assert row["descriptor_pattern"] == "steam games"
+
+    commit = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": first["preview_id"],
+            "overrides": [
+                {
+                    "row_number": row["row_number"],
+                    "category_key": "subscriptions.digital",
+                    "classification": "expense_candidate",
+                    "remember": "descriptor",
+                }
+            ],
+        },
+    )
+    assert commit.status_code == 200
+    assert commit.json()["learned"] == ["description: steam games"]
+
+    second_csv = (
+        header
+        + '"11.03.26";"KARTENZAHLUNG";"PAYPAL *MERCHANT UNCLEAR STEAM-GAMES 5678";'
+        + '"PayPal";"-19,99";"EUR";"Umsatz gebucht"\n'
+    ).encode("utf-8")
+    second = client.post(
+        "/api/imports/preview",
+        files={"file": ("second.csv", second_csv, "text/csv")},
+    ).json()
+
+    assert second["rows"][0]["category"] == "subscriptions.digital"
+    assert second["rows"][0]["classification_source"] == "user"
+    assert second["rows"][0]["review_required"] is False
+
+
+def test_import_learning_rejects_ambiguous_merchant_choice(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+    header = (
+        '"Buchungstag";"Buchungstext";"Verwendungszweck";'
+        '"Beguenstigter/Zahlungspflichtiger";"Betrag";"Waehrung";"Info"\n'
+    )
+    csv = (
+        header
+        + '"10.03.26";"KARTENZAHLUNG";"PAYPAL *MERCHANT UNCLEAR STEAM GAMES";'
+        + '"PayPal";"-9,99";"EUR";"Umsatz gebucht"\n'
+    ).encode("utf-8")
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", csv, "text/csv")},
+    ).json()
+
+    commit = client.post(
+        "/api/imports/commit",
+        json={
+            "preview_id": preview["preview_id"],
+            "overrides": [
+                {
+                    "row_number": preview["rows"][0]["row_number"],
+                    "category_key": "subscriptions.digital",
+                    "remember": "merchant",
+                }
+            ],
+        },
+    )
+
+    assert commit.status_code == 200
+    assert commit.json()["inserted"] == 1
+    assert commit.json()["learned"] == []
+    assert "ambiguous" in commit.json()["learning_errors"][0]
+
+
+def test_apply_to_future_rule_matches_a_future_transaction(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")},
+    ).json()
+    client.post("/api/imports/commit", json={"preview_id": preview["preview_id"]})
+    transactions = client.get(
+        "/api/transactions",
+        params={"start": "1900-01-01", "end": "2100-01-01", "limit": 1},
+    ).json()["transactions"]
+    transaction_id = transactions[0]["id"]
+
+    corrected = client.post(
+        f"/api/transactions/{transaction_id}/correct",
+        json={
+            "merchant": "Owner Merchant",
+            "classification": "expense_candidate",
+            "category_key": "food.groceries",
+            "apply_to_future": True,
+        },
+    )
+    assert corrected.status_code == 200
+
+    header = (
+        '"Buchungstag";"Buchungstext";"Verwendungszweck";'
+        '"Beguenstigter/Zahlungspflichtiger";"Betrag";"Waehrung";"Info"\n'
+    )
+    future_csv = (
+        header
+        + '"12.03.26";"KARTENZAHLUNG";"Owner Merchant purchase";'
+        + '"Owner Merchant";"-5,00";"EUR";"Umsatz gebucht"\n'
+    ).encode("utf-8")
+    future = client.post(
+        "/api/imports/preview",
+        files={"file": ("future.csv", future_csv, "text/csv")},
+    ).json()
+
+    assert future["rows"][0]["category"] == "food.groceries"
+    assert future["rows"][0]["classification_source"] == "user"

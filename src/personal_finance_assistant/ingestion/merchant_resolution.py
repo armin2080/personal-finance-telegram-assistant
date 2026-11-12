@@ -186,3 +186,91 @@ def extract_merchant_candidate(counterparty: str, purpose: str, booking_text: st
         return normalize_merchant_display(first_segment) or "Merchant unclear"
 
     return normalize_merchant_display(party) or "Counterparty unclear"
+
+
+_GENERIC_LEARNING_TOKENS = frozenset(
+    {
+        "ag",
+        "bei",
+        "card",
+        "city",
+        "de",
+        "debitk",
+        "einkauf",
+        "endtoend",
+        "example",
+        "filiale",
+        "folgelastschrift",
+        "gmbh",
+        "ihr",
+        "karte",
+        "kartenzahlung",
+        "kg",
+        "lastschrift",
+        "ltd",
+        "mandate",
+        "merchant",
+        "nr",
+        "online",
+        "paypal",
+        "payment",
+        "payments",
+        "purchase",
+        "ref",
+        "referenz",
+        "se",
+        "shop",
+        "store",
+        "terminal",
+        "test",
+        "ueberweisung",
+        "überweisung",
+        "ug",
+        "unclear",
+        "unknown",
+        "www",
+        "zahlung",
+    }
+)
+_AMBIGUOUS_MERCHANT_MARKERS = (
+    "unclear",
+    "unknown",
+    "merchant omitted",
+    "no merchant",
+    "paypal (merchant",
+)
+
+
+def is_ambiguous_merchant(value: str) -> bool:
+    """Return True when a merchant label is too generic to learn safely."""
+
+    folded = normalize_alias_key(value)
+    if not folded:
+        return True
+    return any(marker in folded for marker in _AMBIGUOUS_MERCHANT_MARKERS)
+
+
+def learnable_descriptor(purpose: str, booking_text: str = "", counterparty: str = "") -> str:
+    """Extract a short, deterministic phrase suitable for descriptor learning.
+
+    The result is intentionally conservative: reference-like tokens, generic
+    banking words and single short tokens are rejected so a learned rule cannot
+    silently recategorise unrelated transactions.
+    """
+
+    text = " ".join((purpose, booking_text, counterparty)).casefold()
+    text = re.sub(r"[^\wäöüß]+", " ", text, flags=re.UNICODE)
+    tokens: list[str] = []
+    for token in text.split():
+        if len(token) < 3 or token in _GENERIC_LEARNING_TOKENS:
+            continue
+        if token.isdigit() or sum(character.isdigit() for character in token) > 1:
+            continue
+        if token not in tokens:
+            tokens.append(token)
+    pattern = " ".join(tokens[:4]).strip()
+    if len(pattern) < 4:
+        return ""
+    if len(tokens) == 1 and len(pattern) < 6:
+        return ""
+    return pattern[:60]

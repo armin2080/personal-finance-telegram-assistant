@@ -236,9 +236,11 @@
             </label>
             <div class="review-actions">
               <button id="import-commit" class="button button-primary" type="button">Import rows</button>
+              <button id="import-remember-edits" class="button" type="button">Remember edited rows</button>
               <button id="import-reset" class="button" type="button">Choose another file</button>
             </div>
             <p class="muted">Suggestions are deterministic. Edit any row before importing. Rows marked for review remain in the Review queue.</p>
+            <p class="muted">Learning is optional. “Remember this merchant” applies the category to future imports from that merchant. For ambiguous PayPal rows, use “Remember this description” instead.</p>
           </div>
           <div class="filter-row wrap import-filter">
             <input id="import-search" type="search" placeholder="Filter merchant or description">

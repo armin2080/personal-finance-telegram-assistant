@@ -268,7 +268,11 @@ is held in memory for 30 minutes, is limited to 10 MB, and is never sent to
 Telegram or an external service. The uploaded source is not retained after the
 request. Exact-file protection and possible-duplicate review remain in force;
 possible duplicates are skipped unless explicitly included. Use this flow only
-through the private loopback/Tailscale path.
+through the private loopback/Tailscale path. Per-row learning is opt-in:
+`Remember this merchant` creates an exact alias and default category, while
+`Remember this description` creates a conservative descriptor rule for ambiguous
+merchants such as PayPal. Learned entries can be reviewed and deleted under
+**Merchants & rules**.
 
 The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
 busy timeout allow concurrent reads and short writes. Keep both writing paths
