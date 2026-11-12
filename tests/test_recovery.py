@@ -651,6 +651,10 @@ def test_dashboard_management_endpoints(tmp_path: Path) -> None:
     assert answer.status_code == 200
     assert "spent" in answer.json()["text"]
 
+    reprocess = client.post("/api/reprocess")
+    assert reprocess.status_code == 200
+    assert reprocess.json()["updated"] >= 0
+
     imports = client.get("/api/imports").json()["imports"]
     assert imports[0]["status"] == "completed"
     integrity = client.get("/api/integrity").json()
