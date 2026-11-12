@@ -91,6 +91,8 @@ finance-assistant budget list --month 2026-10
 finance-assistant correct TRANSACTION_ID --category food.groceries \
   --classification expense_candidate --merchant "Supermarkt Mitte" --note "checked"
 finance-assistant split TRANSACTION_ID -2000:food.groceries -1675:housing.household
+finance-assistant correct TRANSACTION_ID --undo
+finance-assistant link REVERSAL_ID --to ORIGINAL_ID --type reversal
 finance-assistant rule add --merchant-pattern "Supermarkt Mitte" \
   --category food.groceries --classification expense_candidate --priority 200
 finance-assistant merchant list

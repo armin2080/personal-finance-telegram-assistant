@@ -36,6 +36,7 @@ from personal_finance_assistant.services.management import (
     set_merchant_default_category,
     set_transaction_note,
     split_transaction,
+    undo_transaction_correction,
 )
 from personal_finance_assistant.settings import Settings
 from personal_finance_assistant.storage.sqlite import Database, StorageCapacityError
@@ -261,8 +262,13 @@ def _correct(
     category_key: str | None,
     merchant: str | None,
     note: str | None,
+    undo: bool = False,
 ) -> int:
     database = _database()
+    if undo:
+        undo_transaction_correction(database.path, transaction_id)
+        print(f"Correction for {transaction_id} undone; deterministic labels reapplied.")
+        return 0
     if merchant:
         correct_transaction_merchant(database.path, transaction_id, merchant)
     if note is not None:
@@ -411,6 +417,14 @@ def _ask(question: str, month: str | None) -> int:
     return 0
 
 
+def _link(transaction_id: str, linked_id: str, link_type: str) -> int:
+    from personal_finance_assistant.services.management import link_transactions
+
+    link_transactions(_database().path, transaction_id, linked_id, link_type=link_type)
+    print(f"Linked {transaction_id} to {linked_id} as {link_type}.")
+    return 0
+
+
 def _integrity() -> int:
     report = check_database_integrity(_database().path)
     foreign_keys = cast(list[object], report["foreign_key_violations"])
@@ -490,10 +504,20 @@ def build_parser() -> argparse.ArgumentParser:
     correct_parser.add_argument("--category")
     correct_parser.add_argument("--merchant")
     correct_parser.add_argument("--note")
+    correct_parser.add_argument(
+        "--undo", action="store_true", help="remove a user correction and recompute labels"
+    )
 
     split_parser = subparsers.add_parser("split", help="split one transaction exactly")
     split_parser.add_argument("transaction_id")
     split_parser.add_argument("allocations", nargs="+", metavar="AMOUNT:CATEGORY[:NOTE]")
+
+    link_parser = subparsers.add_parser("link", help="link a refund or reversal to its original")
+    link_parser.add_argument("transaction_id")
+    link_parser.add_argument("--to", dest="linked_id", required=True)
+    link_parser.add_argument(
+        "--type", dest="link_type", choices=["refund", "reversal"], required=True
+    )
 
     rule_parser = subparsers.add_parser("rule", help="manage explicit classification rules")
     rule_sub = rule_parser.add_subparsers(dest="rule_action", required=True)
@@ -595,10 +619,13 @@ def main() -> None:
                     category_key=args.category,
                     merchant=args.merchant,
                     note=args.note,
+                    undo=args.undo,
                 )
             )
         if args.command == "split":
             raise SystemExit(_split(args.transaction_id, tuple(args.allocations)))
+        if args.command == "link":
+            raise SystemExit(_link(args.transaction_id, args.linked_id, args.link_type))
         if args.command == "rule":
             raise SystemExit(
                 _rule(
