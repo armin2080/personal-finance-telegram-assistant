@@ -220,6 +220,45 @@ Then open `http://127.0.0.1:8000/` on the laptop. Do not change the bind address
 to `0.0.0.0` or expose the port through the router. Doing so would require a
 separate authentication, CSRF and threat-model decision.
 
+### Mobile access (Android)
+
+The cockpit has no login of its own. Use an SSH local port forward from the
+phone; the phone's loopback address becomes the authenticated path to the Pi.
+
+1. On the Pi, install and start the optional cockpit service, then verify it:
+   `sudo systemctl enable --now finance-assistant-web.service`,
+   `sudo systemctl status finance-assistant-web.service --no-pager`, and
+   `curl -fsS http://127.0.0.1:8000/api/health`.
+2. Confirm SSH is running (`sudo systemctl status ssh --no-pager`) and note the
+   login account (`whoami`). Use the account you normally administer the Pi
+   with; the unprivileged `financebot` service account may have no login shell.
+3. On Android, install **Termux** from F-Droid (the Play Store build is
+   deprecated) and **Tailscale** from the Play Store/F-Droid if the Pi is
+   reached through a tailnet. Both are free and open source.
+4. In Termux:
+   `pkg update && pkg install openssh`,
+   `ssh-keygen -t ed25519 -C android`, then `cat ~/.ssh/id_ed25519.pub`.
+   Add that public key to the Pi account's `~/.ssh/authorized_keys`
+   (`chmod 700 ~/.ssh`, `chmod 600 ~/.ssh/authorized_keys`).
+5. Test the route, then leave the tunnel running:
+   `ssh -N -L 8000:127.0.0.1:8000 <login-user>@<pi-lan-ip>` on the home Wi-Fi,
+   or `ssh -N -L 8000:127.0.0.1:8000 <login-user>@<pi-vpn-ip>` when remote.
+6. Open `http://127.0.0.1:8000/` in the phone browser. Use `127.0.0.1`, not
+   the Pi's address: the listener is on the phone. If phone port 8000 is busy,
+   forward `-L 8080:127.0.0.1:8000` and open `http://127.0.0.1:8080/`.
+7. Keep the tunnel alive with `termux-wake-lock` and by disabling Android
+   battery optimisation for Termux. `tmux` is useful for detaching/reattaching.
+
+ConnectBot (Apache-2.0) is an alternative: add the Pi host, then configure a
+local port forward from `8000` to `127.0.0.1:8000` and keep the session open.
+
+Remote access must go through a private VPN such as Tailscale/WireGuard, not a
+router port forward of the cockpit or SSH. Tailscale `serve` can proxy the
+loopback cockpit over a private tailnet, but that exposes the unauthenticated
+cockpit to every device in that tailnet; prefer the SSH tunnel unless the
+tailnet and its devices are fully trusted. Never enable Telegram inline mode,
+a Web App/Mini App, or a public webhook for cockpit access.
+
 The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
 busy timeout allow concurrent reads and short writes. Keep both writing paths
 (corrections, budgets, imports) short.
