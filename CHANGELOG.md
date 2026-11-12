@@ -27,7 +27,7 @@
 - Added insight coverage for largest categories, changes, merchant
   concentration, unusual one-offs, income changes, fixed/discretionary spending,
   budget pace and recurring price changes.
-- Added 43 recovery regression tests (125 total) and documented the recovery
+- Added 45 recovery regression tests (127 total) and documented the recovery
   baseline, semantics, rules and acceptance evidence.
 
 ## 0.1.0 — Initial project foundation

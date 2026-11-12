@@ -722,3 +722,76 @@ def test_linked_reversal_offsets_the_original_expense(tmp_path: Path) -> None:
         "food.restaurants": 9000
     }
     assert result.inserted == 2
+
+
+def test_import_undo_preserves_other_import_batches(tmp_path: Path) -> None:
+    database = Database(tmp_path / "finance.sqlite3")
+    first = database.import_file(
+        _parse(
+            _tx(
+                purpose="Groceries",
+                counterparty="SUPERMARKT MITTE",
+                amount=-1000,
+                key="first",
+                day=date(2026, 5, 1),
+            ),
+            name="first-file",
+        )
+    )
+    database.import_file(
+        _parse(
+            _tx(
+                purpose="Restaurant meal",
+                counterparty="BISTRO ALEX",
+                amount=-2000,
+                key="second",
+                day=date(2026, 5, 2),
+            ),
+            name="second-file",
+        )
+    )
+
+    database.undo_import(first.import_id or "", confirm=True)
+
+    with database.session() as connection:
+        remaining = connection.execute(
+            "SELECT merchant_candidate, amount_minor FROM transactions"
+        ).fetchall()
+    assert [tuple(row) for row in remaining] == [("Bistro Alex", -2000)]
+    assert len(database.list_imports()) == 1
+
+
+def test_schema_v4_upgrade_preserves_existing_rows(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-data.sqlite3"
+    _legacy_v4(database_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """INSERT INTO imports
+               (id, file_sha256, source_format, encoding, transaction_count, created_at)
+               VALUES ('imp', 'hash', 'synthetic', 'utf-8', 1, '2026-01-01T00:00:00+00:00')"""
+        )
+        connection.execute(
+            """INSERT INTO transactions
+               (id, import_id, booking_date, booking_text, description, counterparty,
+                merchant_candidate, amount_minor, currency, classification, category_key,
+                dedupe_key, dedupe_basis, created_at)
+               VALUES ('txn', 'imp', '2026-05-01', 'KARTENZAHLUNG', 'Groceries',
+                       'SUPERMARKT MITTE', 'Supermarkt Mitte', -1000, 'EUR',
+                       'expense_candidate', 'food.groceries', 'key', 'content',
+                       '2026-01-01T00:00:00+00:00')"""
+        )
+        connection.execute(
+            "INSERT INTO budgets (id, month, category_key, limit_minor, created_at) "
+            "VALUES ('budget', '2026-05', 'food.groceries', 5000, '2026-01-01T00:00:00+00:00')"
+        )
+        connection.commit()
+
+    Database(database_path).initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM budgets").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert connection.execute(
+            "SELECT category_key, amount_minor FROM transaction_flows"
+        ).fetchone() == ("food.groceries", -1000)
