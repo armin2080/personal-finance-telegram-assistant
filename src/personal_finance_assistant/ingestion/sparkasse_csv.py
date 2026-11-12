@@ -152,19 +152,36 @@ def _classify(amount_minor: int, booking_text: str) -> Classification:
     return "unknown"
 
 
-def _payment_channel(booking_text: str) -> str:
-    text = booking_text.casefold()
+def _payment_channel(booking_text: str, counterparty: str = "", purpose: str = "") -> str:
+    text = " ".join((booking_text, counterparty, purpose)).casefold()
     if "paypal" in text:
         return "paypal"
-    if "digitale karte" in text:
+    if any(
+        marker in text
+        for marker in (
+            "digitale karte",
+            "digital card",
+            "android pay",
+            "apple pay",
+            "google pay",
+            "mobile wallet",
+        )
+    ):
         return "digital_wallet"
+    if "lastschrift" in text or "direct debit" in text:
+        return "direct_debit"
     if "karten" in text or "card" in text:
         return "card"
-    if "lastschrift" in text:
-        return "direct_debit"
-    if "überweisung" in text or "ueberweisung" in text:
+    if (
+        "überweisung" in text
+        or "ueberweisung" in text
+        or "gutschrift" in text
+        or "lohn" in text
+        or "gehalt" in text
+        or "entgeltabschluss" in text
+    ):
         return "bank_transfer"
-    if "bargeld" in text or "geldautomat" in text or "atm" in text:
+    if "bargeld" in text or "geldautomat" in text or "cash withdrawal" in text:
         return "cash"
     return "unknown"
 
@@ -208,6 +225,9 @@ def _dedupe_data(
 
     # Weak fallback: identical same-day transactions can be legitimate. The
     # storage layer therefore treats this as a possible duplicate, not proof.
+    # The content key includes the purpose because two legitimate purchases on
+    # the same day for the same amount at the same merchant can have different
+    # purposes. A byte-identical row is the only safe automatic duplicate.
     material = "|".join(
         (
             "content",
@@ -256,9 +276,9 @@ def parse_sparkasse_csv(path: str | Path) -> ParseResult:
     for row_number, row in _iter_rows(reader):
         if not row or all(not (value or "").strip() for value in row.values()):
             continue
-        if None in row:
-            errors.append(f"row {row_number}: too many columns")
-            continue
+        # Extra unnamed columns are ignored for robustness; required columns
+        # have already been validated above.
+        row = {key: value for key, value in row.items() if key is not None}
 
         try:
             try:
@@ -336,7 +356,7 @@ def parse_sparkasse_csv(path: str | Path) -> ParseResult:
                     dedupe_key=dedupe_key,
                     dedupe_basis=dedupe_basis,
                     row_number=row_number,
-                    payment_channel=_payment_channel(booking_text),
+                    payment_channel=_payment_channel(booking_text, counterparty, purpose),
                 )
             )
         except (ValueError, AssertionError) as exc:

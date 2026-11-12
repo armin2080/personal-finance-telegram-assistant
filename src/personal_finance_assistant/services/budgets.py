@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
-from personal_finance_assistant.domain import BudgetStatus, RecurringCandidate, ReviewCandidate
+from personal_finance_assistant.domain import (
+    BudgetMonthSummary,
+    BudgetStatus,
+    RecurringCandidate,
+    RecurringPriceChange,
+    ReviewCandidate,
+)
 from personal_finance_assistant.storage.sqlite import Database
 
 
@@ -18,12 +25,34 @@ def set_budget(database_path: str | Path, month: str, category_key: str, limit_m
     Database(database_path).set_budget(month, category_key, limit_minor)
 
 
-def get_budget_status(database_path: str | Path, month: str, category_key: str) -> BudgetStatus:
-    return Database(database_path).budget_status(month, category_key)
+def delete_budget(database_path: str | Path, month: str, category_key: str) -> bool:
+    return Database(database_path).delete_budget(month, category_key)
 
 
-def list_budget_statuses(database_path: str | Path, month: str) -> tuple[BudgetStatus, ...]:
-    return Database(database_path).list_budget_statuses(month)
+def list_budgets(database_path: str | Path, month: str) -> tuple[tuple[str, int], ...]:
+    return Database(database_path).list_budgets(month)
+
+
+def get_budget_status(
+    database_path: str | Path,
+    month: str,
+    category_key: str,
+    *,
+    as_of: date | None = None,
+) -> BudgetStatus:
+    return Database(database_path).budget_status(month, category_key, as_of=as_of)
+
+
+def list_budget_statuses(
+    database_path: str | Path, month: str, *, as_of: date | None = None
+) -> tuple[BudgetStatus, ...]:
+    return Database(database_path).list_budget_statuses(month, as_of=as_of)
+
+
+def get_budget_month_summary(
+    database_path: str | Path, month: str, *, as_of: date | None = None
+) -> BudgetMonthSummary:
+    return Database(database_path).budget_month_summary(month, as_of=as_of)
 
 
 def find_recurring_candidates(
@@ -40,6 +69,10 @@ def find_recurring_candidates(
         minimum_observations=minimum_observations,
         tolerance_minor=tolerance_minor,
     )
+
+
+def find_recurring_price_changes(database_path: str | Path) -> tuple[RecurringPriceChange, ...]:
+    return Database(database_path).recurring_price_changes()
 
 
 def list_review_candidates(

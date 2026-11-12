@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 
-from personal_finance_assistant.domain import ImportBatchPreview, ParseResult
+from personal_finance_assistant.domain import ImportBatchInfo, ImportBatchPreview, ParseResult
 
 
 def build_import_preview(parsed: ParseResult) -> ImportBatchPreview:
@@ -30,3 +31,21 @@ def build_import_preview(parsed: ParseResult) -> ImportBatchPreview:
             transaction.dedupe_basis == "content" for transaction in parsed.transactions
         ),
     )
+
+
+def list_import_batches(database_path: str | Path) -> tuple[ImportBatchInfo, ...]:
+    from personal_finance_assistant.storage.sqlite import Database
+
+    return Database(database_path).list_imports()
+
+
+def undo_import_batch(database_path: str | Path, import_id: str, *, confirm: bool) -> int:
+    from personal_finance_assistant.storage.sqlite import Database
+
+    return Database(database_path).undo_import(import_id, confirm=confirm)
+
+
+def data_coverage(database_path: str | Path) -> dict[str, object]:
+    from personal_finance_assistant.storage.sqlite import Database
+
+    return Database(database_path).data_coverage()

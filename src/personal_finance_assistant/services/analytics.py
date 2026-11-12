@@ -12,6 +12,7 @@ from personal_finance_assistant.domain import (
     LedgerReconciliation,
     MerchantTotal,
     PeriodReport,
+    TransactionRecord,
     WeeklyTrend,
 )
 from personal_finance_assistant.storage.sqlite import Database
@@ -110,3 +111,53 @@ def get_current_month_summary(
         income_minor=result["income_minor"],
         transaction_count=result["transaction_count"],
     )
+
+
+def get_data_coverage(database_path: str | Path) -> dict[str, object]:
+    """Return safe date coverage so interfaces can choose a useful period."""
+
+    return Database(database_path).data_coverage()
+
+
+def list_transactions_page(
+    database_path: str | Path,
+    start: date,
+    end: date,
+    *,
+    search: str | None = None,
+    category_key: str | None = None,
+    classification: str | None = None,
+    review_status: str | None = None,
+    merchant: str | None = None,
+    uncategorized_only: bool = False,
+    transaction_ids: tuple[str, ...] | None = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[tuple[TransactionRecord, ...], int]:
+    return Database(database_path).transaction_page(
+        start,
+        end,
+        search=search,
+        category_key=category_key,
+        classification=classification,
+        review_status=review_status,
+        merchant=merchant,
+        uncategorized_only=uncategorized_only,
+        transaction_ids=transaction_ids,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def top_expense_transactions(
+    database_path: str | Path, start: date, end: date, *, limit: int = 5
+) -> tuple[TransactionRecord, ...]:
+    return Database(database_path).top_expense_transactions(start, end, limit=limit)
+
+
+def check_database_integrity(database_path: str | Path) -> dict[str, object]:
+    return Database(database_path).integrity_report()

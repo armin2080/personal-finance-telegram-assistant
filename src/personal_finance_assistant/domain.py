@@ -101,6 +101,62 @@ class ImportBatchInfo:
     exact_duplicate_count: int
     possible_duplicate_count: int
     created_at: str
+    status: str = "completed"
+
+
+@dataclass(frozen=True, slots=True)
+class MerchantEntityInfo:
+    entity_id: str
+    canonical_name: str
+    default_category_key: str | None
+    aliases: tuple[str, ...]
+    transaction_count: int
+    total_minor: int
+
+
+@dataclass(frozen=True, slots=True)
+class ClassificationRuleInfo:
+    rule_id: str
+    pattern: str
+    classification: str
+    category_key: str
+    confidence: float
+    priority: int
+    match_type: str
+    merchant_pattern: str | None
+    descriptor_pattern: str | None
+    payment_channel: str | None
+    direction: str
+    payment_type: str | None
+    enabled: bool
+    rule_version: str
+    created_at: str
+    updated_at: str
+    label: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionSplit:
+    split_id: str
+    transaction_id: str
+    amount_minor: int
+    category_key: str
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionAnswer:
+    """A deterministic answer with the period and calculation context."""
+
+    text: str
+    intent: str
+    start_date: date
+    end_date: date
+    metric: str
+    category_keys: tuple[str, ...] = ()
+    merchant: str | None = None
+    confidence: str = "high"
+    uncertainty: str | None = None
 
 
 MerchantSource = Literal["unreviewed", "deterministic", "alias", "user"]
@@ -113,9 +169,10 @@ class MerchantResolution:
     merchant: str
     source: MerchantSource
     confidence: float
+    default_category_key: str | None = None
 
 
-ClassificationSource = Literal["deterministic", "user", "unreviewed"]
+ClassificationSource = Literal["deterministic", "user", "unreviewed", "alias"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +186,8 @@ class ClassificationResolution:
     category_source: ClassificationSource
     category_confidence: float
     rule_version: str
+    evidence: str = ""
+    rule_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +207,14 @@ class PeriodReport:
     uncategorized_expenses_minor: int
     category_expenses: tuple[CategoryTotal, ...]
     transaction_count: int
+    fees_minor: int = 0
+    cash_withdrawals_minor: int = 0
+    savings_minor: int = 0
+    reversals_minor: int = 0
+
+    @property
+    def categorized_expenses_minor(self) -> int:
+        return self.expenses_minor - self.uncategorized_expenses_minor
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +234,11 @@ class FinancialOverview:
     savings_rate_percent: int | None
     transaction_count: int
     data_quality: str
+    uncategorized_expenses_minor: int = 0
+    categorized_expenses_minor: int = 0
+    reversals_minor: int = 0
+    cash_withdrawals_minor: int = 0
+    savings_minor: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +256,16 @@ class TransactionRecord:
     category_key: str
     review_status: ReviewStatus
     payment_channel: str
+    merchant_source: MerchantSource = "unreviewed"
+    merchant_confidence: float = 0.0
+    classification_source: ClassificationSource = "unreviewed"
+    classification_confidence: float = 0.0
+    category_source: ClassificationSource = "unreviewed"
+    category_confidence: float = 0.0
+    evidence: str = ""
+    note: str = ""
+    has_split: bool = False
+    split_categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +295,14 @@ class LedgerReconciliation:
     refund_minor: int
     transfer_minor: int
     unknown_minor: int
+    fee_minor: int = 0
+    cash_minor: int = 0
+    savings_minor: int = 0
+    reversal_minor: int = 0
+    transfer_in_minor: int = 0
+    transfer_out_minor: int = 0
+    unexplained_debit_minor: int = 0
+    unexplained_credit_minor: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +360,27 @@ class BudgetStatus:
     used_minor: int
     remaining_minor: int
     exceeded: bool
+    period_start: date | None = None
+    period_end: date | None = None
+    elapsed_days: int = 0
+    total_days: int = 0
+    percentage_used: int = 0
+    projected_minor: int | None = None
+    uncategorized_expenses_minor: int = 0
+    complete: bool = True
+    status: str = "within_limit"
+    alert_threshold_percent: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetMonthSummary:
+    month: str
+    total_expenses_minor: int
+    categorized_expenses_minor: int
+    uncategorized_expenses_minor: int
+    budgets: tuple[BudgetStatus, ...]
+    complete: bool
+    disclosure: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +394,22 @@ class RecurringCandidate:
     confidence: str
     confirmed: bool = False
     regularity: str = "stable"
+    latest_amount_minor: int | None = None
+    previous_amount_minor: int | None = None
+    status: str = "possible"
+    supporting_transaction_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RecurringPriceChange:
+    merchant: str
+    old_amount_minor: int
+    new_amount_minor: int
+    changed_on: date
+    observations_before: int
+    observations_after: int
+    confidence: str
+    supporting_transaction_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,3 +431,4 @@ class ImportResult:
     exact_duplicates: int
     possible_duplicates: int
     already_imported_file: bool = False
+    status: str = "completed"
