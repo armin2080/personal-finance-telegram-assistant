@@ -14,7 +14,7 @@
 |---|---|
 | `id` | Internal random identifier. |
 | `import_id` | Import batch that introduced the row. |
-| `account_alias` | Owner-defined non-sensitive alias such as `primary`; never an IBAN. |
+| `account_alias` | User-defined non-sensitive alias such as `primary`; never an IBAN. |
 | `booking_date` | Date the bank booked the transaction. |
 | `value_date` | Value date, nullable. |
 | `booking_text` | Bank's transaction type/label. |
@@ -34,7 +34,7 @@
 | `category_source` | `unreviewed`, `rule`, or `user`. |
 | `category_confidence` | 0.0–1.0; no confidence is implied for unreviewed rows. |
 | `review_status` | `needs_review`, `confirmed`, or `dismissed`. |
-| `note` | Optional owner note, stored locally. |
+| `note` | Optional user note, stored locally. |
 | `evidence` | Human-readable rule/evidence marker for the current label. |
 | `dedupe_key` | Digest used to compare imports; not source reference itself. |
 | `dedupe_basis` | `reference` or `content`. |
@@ -146,5 +146,5 @@ uncategorised expenditure in the month and marks the category status incomplete;
 it must never show a false zero simply because classification failed. Recurring
 candidates require at least three observations with plausible monthly-to-quarterly
 cadence, stable amounts (or one detected price change), and a relevant category;
-they are not subscriptions until the owner confirms them. Sporadic multi-month
+they are not subscriptions until the user confirms them. Sporadic multi-month
 purchases and grocery/restaurant shopping are rejected.

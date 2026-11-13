@@ -5,7 +5,7 @@
 
 ## Context
 
-The owner needs to test the assistant from Telegram using the observed Sparkasse
+The user needs a way to submit a statement from Telegram using the observed Sparkasse
 CSV export. A CLI-only workflow prevents end-to-end testing of the bot. Sending
 the file through Telegram exposes it to Telegram infrastructure, so the feature
 must remain narrowly scoped and explicitly documented.

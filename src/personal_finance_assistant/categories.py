@@ -76,7 +76,7 @@ CONSUMER_CATEGORIES: frozenset[str] = frozenset(
     }
 )
 
-# Categories that represent a movement between the owner's own accounts. They
+# Categories that represent a movement between the user's own accounts. They
 # are excluded from income and expenditure even if a row's classification is
 # stale, so money from an untracked blocked account can never inflate income.
 TRANSFER_CATEGORIES: frozenset[str] = frozenset(

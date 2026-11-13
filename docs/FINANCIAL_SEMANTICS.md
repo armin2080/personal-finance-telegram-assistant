@@ -28,7 +28,7 @@ excluded. This is the formula used by the independent oracle.
 
 ## Transfer categories
 
-Two categories represent movement of the owner's own money and are excluded
+Two categories represent movement of the user's own money and are excluded
 from income and expenditure:
 
 | Category | Meaning |

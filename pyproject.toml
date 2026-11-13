@@ -1,15 +1,28 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "personal-finance-telegram-assistant"
 version = "0.1.0"
-description = "A local-first, single-user personal finance assistant with a Telegram interface."
+description = "Local-first, single-user personal finance assistant with a Telegram bot, CLI, and mobile web cockpit."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary - no license granted" }
-authors = [{ name = "Project owner" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Armin Maddah" }]
+keywords = ["personal-finance", "sqlite", "telegram", "local-first", "csv"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business :: Financial :: Accounting",
+]
 dependencies = [
   "fastapi>=0.115,<1",
   "python-multipart>=0.0.9,<1",

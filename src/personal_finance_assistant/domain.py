@@ -119,7 +119,7 @@ class ImportRowPreview:
 
 @dataclass(frozen=True, slots=True)
 class ImportRowOverride:
-    """Explicit owner edits applied to one row during import commit."""
+    """Explicit user edits applied to one row during import commit."""
 
     merchant: str | None = None
     classification: str | None = None
@@ -283,7 +283,7 @@ class FinancialOverview:
 
 @dataclass(frozen=True, slots=True)
 class TransactionRecord:
-    """Owner-visible transaction data for the local dashboard."""
+    """User-visible transaction data for the local dashboard."""
 
     transaction_id: str
     booking_date: date

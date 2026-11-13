@@ -51,7 +51,7 @@ card fees, foreign-currency fees and restaurant memos mentioning a service fee.
 
 ## Learning from import review
 
-Learning is opt-in per row in the web import flow. The owner chooses
+Learning is opt-in per row in the web import flow. The user chooses
 `This transaction only`, `Remember this merchant in future`, or
 `Remember this description in future`.
 
@@ -70,7 +70,7 @@ Learning is opt-in per row in the web import flow. The owner chooses
   at merchant level, because that would apply one category to every PayPal
   transaction. The UI requires descriptor learning instead.
 - Learned rules and aliases are visible and removable in **Merchants & rules**.
-- No automatic global rule is created without the owner selecting a learning
+- No automatic global rule is created without the user selecting a learning
   option.
 
 ## Consumer category baseline
@@ -106,7 +106,7 @@ deliberately less confident than exact merchant patterns.
 
 ## Blocked account (Sperrkonto) payouts
 
-A monthly payout from a blocked account is the owner's own money being released,
+A monthly payout from a blocked account is the user's own money being released,
 not new income. Rows containing `sperrkonto`, `blocked account` or
 `blocked deposit` are classified `transfer_candidate` with category
 `transfers.blocked_account` at 0.95 confidence.

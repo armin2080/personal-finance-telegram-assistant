@@ -8,13 +8,14 @@ variable alone.
 
 ## Reasons
 
-The product handles sensitive financial data on a low-memory Raspberry Pi.
-Deterministic local processing currently satisfies the core import, correction,
-reporting, and budget needs without external data egress or credential storage.
+The application handles sensitive financial data on a self-hosted, often
+low-memory machine. Deterministic local processing satisfies the core import,
+correction, reporting, and budget needs without external data egress or
+credential storage.
 
 ## Required future decision
 
-A future implementation needs separate owner approval, a privacy/security review,
+A future implementation needs separate maintainer approval, a privacy/security review,
 provider or model verification, a default-off kill switch, synthetic evaluation,
 rate limits, and a tested rollback path. See
 `docs/AI_PROPOSAL.md` and `docs/BANK_SYNC_PROPOSAL.md`.

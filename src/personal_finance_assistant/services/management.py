@@ -1,4 +1,4 @@
-"""Application services for owner review, merchant memory and rule management."""
+"""Application services for user review, merchant memory and rule management."""
 
 from __future__ import annotations
 

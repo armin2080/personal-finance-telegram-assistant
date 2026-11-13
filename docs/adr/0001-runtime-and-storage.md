@@ -1,29 +1,39 @@
-# ADR-0001: Python on Raspberry Pi with SQLite
+# ADR-0001: Self-hosted Python with SQLite
 
 - Status: Accepted
 - Date: 2026-11-10
 
 ## Context
 
-The owner prefers Python and can host the application on an existing Raspberry Pi. Telegram Serverless executes JavaScript modules in a V8 runtime and is not a Python host. The product initially has one user and modest transaction volume; it does not require a database server.
+The application handles sensitive financial data and is intended for a single
+user. Telegram Serverless executes JavaScript modules in a V8 runtime, is not a
+Python host, and would place storage in a hosted service. Transaction volume for
+one person is modest and does not require a database server.
 
 ## Decision
 
-Use Python, SQLite, and a single systemd-managed bot process on the Raspberry Pi. Use Telegram Bot API long polling for the interface. Keep bank ingestion and financial calculations local.
+Use Python, SQLite, and a single systemd-managed process on a self-hosted Linux
+machine. Use Telegram Bot API long polling for the bot interface. Keep bank
+ingestion and financial calculations on the same host as the database.
+
+The host may be any Linux machine, including a low-power single-board computer.
+Nothing in the code depends on a specific board.
 
 ## Consequences
 
 Positive:
-- Keeps the preferred language and transaction data on owner-controlled hardware.
-- Avoids a separate VPS/cloud database and recurring hosting costs.
-- SQLite is adequate for a single user and simple backups.
-- Long polling requires outbound HTTPS only.
+- Transaction data stays on hardware the user controls.
+- No separate database server, managed service, or recurring hosting cost.
+- SQLite is adequate for one user, and its online backup API is simple to verify.
+- Long polling requires outbound HTTPS only, so no inbound port is needed.
 
 Trade-offs:
-- Owner is responsible for device uptime, updates, backups, and SD-card health.
-- Raspberry Pi resources are constrained; dependencies and background jobs must stay lightweight.
-- If the Pi is offline, the bot is unavailable.
+- The user is responsible for uptime, updates, backups, and storage health.
+- Low-memory hosts constrain dependencies and background jobs.
+- The bot is unavailable whenever the host is offline.
 
 ## Revisit when
 
-The project needs multi-user tenancy, high concurrency, a public dashboard, or a different deployment target. Any migration requires an ADR and data migration/rollback plan.
+The project needs multi-user tenancy, high concurrency, a publicly reachable
+dashboard, or a managed hosting model. Any such migration requires a new ADR
+with a data migration and rollback plan.

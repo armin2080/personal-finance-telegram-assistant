@@ -462,7 +462,7 @@ def classify_transaction(
             evidence="bank fee marker",
         )
 
-    # A monthly payout from a blocked account is the owner's own money being
+    # A monthly payout from a blocked account is the user's own money being
     # released, not new income. It stays outside income and expenditure.
     if _has_phrase(text, _BLOCKED_ACCOUNT_MARKERS):
         return _resolution(

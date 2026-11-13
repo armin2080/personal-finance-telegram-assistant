@@ -9,7 +9,7 @@ The first data source is a Sparkasse export. Uploading bank statements to a Tele
 
 ## Decision
 
-The MVP imports files through a local CLI after SSH/SFTP/USB transfer. The Telegram bot does not accept statement uploads. This remains disabled unless the owner explicitly approves a separate privacy review.
+The MVP imports files through a local CLI after SSH/SFTP/USB transfer. The Telegram bot does not accept statement uploads. This remains disabled unless a separate privacy review is approved.
 
 ## Consequences
 

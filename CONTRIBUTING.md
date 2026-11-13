@@ -1,6 +1,6 @@
 # Contributing
 
-This repository handles private financial data. Contributions must comply with `AGENTS.md` and `docs/SECURITY_AND_PRIVACY.md`.
+This project handles private financial data. Contributions must comply with `AGENTS.md` and `docs/SECURITY_AND_PRIVACY.md`.
 
 ## Before opening a PR
 
@@ -12,8 +12,8 @@ mypy src
 pytest
 ```
 
-The current validation environment is Python 3.14.4 on Ubuntu 26.04.1 LTS
-(Linux 7.0.0-43-generic, x86_64). The supported minimum remains Python 3.11.
+CI runs the same checks on Python 3.11. The supported minimum is Python 3.11;
+later 3.x releases are expected to work and are welcome as CI matrix additions.
 
 ## Rules
 
@@ -27,10 +27,11 @@ The current validation environment is Python 3.14.4 on Ubuntu 26.04.1 LTS
 
 ## Pull request checklist
 
-- [ ] Linked roadmap work order and acceptance criteria.
+- [ ] Linked issue or roadmap item describing the acceptance criteria.
 - [ ] Tests added/updated and all checks pass.
 - [ ] No raw or identifying financial data added.
 - [ ] No secret, token, database, or export added.
 - [ ] Money/date/duplicate behaviour tested.
 - [ ] Documentation and changelog updated.
+- [ ] Software remains distributed under the MIT license; keep the copyright notice intact.
 - [ ] Migration and rollback plan included, if schema changed.

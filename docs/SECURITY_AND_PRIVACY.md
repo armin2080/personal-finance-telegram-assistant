@@ -2,7 +2,7 @@
 
 ## Threat model
 
-This product handles highly sensitive personal financial activity. Treat the database and source exports as private even when the repository is private. Primary threats include accidental Git commits, leaked bot tokens, unauthorised Telegram users, logs containing transaction details, insecure backups, compromised Pi accounts, and future dependencies sending data externally.
+This project handles highly sensitive personal financial activity. Treat any database and source export you create as private, regardless of whether the repository is public. Primary threats include accidental Git commits, leaked bot tokens, unauthorised Telegram users, logs containing transaction details, insecure backups, a compromised host account, and future dependencies sending data externally.
 
 ## Trust boundaries
 
@@ -10,14 +10,13 @@ This product handles highly sensitive personal financial activity. Treat the dat
 2. **Local application → SQLite:** trusted local process; enforce narrow persistence fields and file permissions.
 3. **Telegram user → bot:** untrusted updates. Require private chat and a numeric user ID allowlist; fail closed.
 4. **Bot → Telegram infrastructure:** outbound message content is disclosed to Telegram as part of normal Bot API operation. Keep responses minimal and never send raw statements.
-5. **Pi → internet:** outbound HTTPS only for Telegram Bot API in MVP. No telemetry, AI, or banking API calls.
+5. **Host → internet:** outbound HTTPS only, for the Telegram Bot API. No telemetry, AI, or banking API calls.
 6. **Backup destination:** treat it as sensitive as the primary database. Encrypt before off-device transfer.
 
 ## Mandatory controls
 
 ### Repository and secrets
 
-- Keep the GitHub repository private during development.
 - `.gitignore` excludes `.env`, database files, backups, exports, statements, and logs.
 - Never paste a real token, password, PIN, TAN, IBAN, or transaction description into code, tests, issues, pull requests, CI, or agent prompts.
 - Use GitHub secret scanning and push protection where available.
@@ -46,12 +45,12 @@ This product handles highly sensitive personal financial activity. Treat the dat
 - Commands return concise summaries, not full transaction histories by default.
 - Do not treat Telegram as an encrypted private storage system. Bot messages are handled by Telegram's cloud Bot API.
 
-### Raspberry Pi / operating system
+### Host operating system
 
-- The starter SQLite database is **not application-encrypted**. File permissions (`0600`) are access controls, not encryption. Consider full-disk encryption or an encrypted data volume when physical access to the SD card/device is in scope; document boot/unlock and recovery trade-offs before enabling it.
+- The starter SQLite database is **not application-encrypted**. File permissions (`0600`) are access controls, not encryption. Consider full-disk encryption or an encrypted data volume when physical access to the host or its storage is in scope; document boot/unlock and recovery trade-offs before enabling it.
 - Dedicated unprivileged account for the service.
 - Database directory `0700`, database and environment file `0600` where supported.
-- SSH key-based administration; disable password login if the owner has verified key access and recovery access.
+- SSH key-based administration; disable password login only after verifying key access and a recovery path.
 - Keep OS security updates current.
 - No inbound ports are needed for the bot. Do not forward ports on the router.
 - Use systemd restrictions from the sample service and adapt paths/account before deployment.
@@ -61,24 +60,24 @@ This product handles highly sensitive personal financial activity. Treat the dat
 
 - Keep runtime dependencies minimal.
 - Pin/update dependencies through reviewed changes; use Dependabot for proposals, not blind auto-merges.
-- Check Python and native-wheel compatibility on the actual Pi OS/architecture before adding compiled packages.
-- No dependency may make an external network request with financial data unless the owner explicitly approves it and the privacy design is updated.
+- Check Python and native-wheel compatibility on the target OS and CPU architecture before adding compiled packages.
+- No dependency may make an external network request with financial data unless the maintainer explicitly approves it and the privacy design is updated.
 
 ## Data lifecycle
 
-1. **Collection:** user exports booked transactions and sends a supported CSV in the allowlisted private chat or transfers it locally to the Pi.
+1. **Collection:** the user exports booked transactions and either sends a supported CSV in the allowlisted private Telegram chat or transfers it to the host.
 2. **Processing:** uploaded files are downloaded into a `0700` temporary directory, parser reads rows in memory, bank identifiers are ignored, and obvious identifiers in memo/counterparty fields are scrubbed.
 3. **Persistence:** only canonicalised transaction data, import metadata, and derived digests are stored in SQLite; the uploaded source is deleted in a `finally` cleanup block.
 4. **Use:** local analytics and concise Telegram summaries.
 5. **Backup:** consistent SQLite backup; encrypted before off-device storage.
-6. **Deletion:** use the user-confirmed local purge command after creating any required backup. This removes the application database and SQLite sidecars; backups under app control must be handled separately. A secure deletion promise cannot be made for SD-card wear-levelled storage.
+6. **Deletion:** use the user-confirmed local purge command after creating any required backup. This removes the application database and SQLite sidecars; backups under app control must be handled separately. A secure deletion promise cannot be made for wear-levelled flash storage or managed storage.
 
 ## Incident response
 
 If the bot token is exposed: revoke it with `@BotFather`, update the private environment file, restart the service, inspect Git history/logs, and do not merely delete the current line.
 
-If the database or a backup is exposed: stop the service, preserve incident evidence, rotate secrets, assess which fields were retained, restore from a known-good protected backup if required, and document the incident for the owner.
+If the database or a backup is exposed: stop the service, preserve incident evidence, rotate secrets, assess which fields were retained, restore from a known-good protected backup if required, and document the incident internally.
 
 ## Release gate
 
-Do not mark the first production release ready until allowlist tests, secret scanning, data minimisation tests, service hardening, backup-and-restore verification, and a documented data deletion procedure have passed.
+Do not treat a deployment as production-ready until allowlist tests, secret scanning, data minimisation tests, service hardening, backup-and-restore verification, and a documented data deletion procedure have passed.

@@ -35,7 +35,7 @@ expense untouched. Import undo also failed when split children existed.
 - Every reporting path must use the flow view; adding a new aggregate that reads
   `transactions` directly for expenses would reintroduce the split bug.
 - Reports can explain unlinked reversals without counting them as income.
-- Linked refunds/reversals require the owner to identify the original
+- Linked refunds and reversals require the user to identify the original
   transaction; the system does not guess a link.
 - Migration failure is retryable and leaves the previous schema intact.
 - The independent oracle remains the authority for unlinked reversals.

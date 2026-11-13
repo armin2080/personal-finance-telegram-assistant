@@ -4,12 +4,13 @@
 
 ### A. Import a bank export
 
-1. The owner exports booked transactions from online banking.
-2. The owner transfers the file to the Pi using a local method (SSH/SFTP/USB),
-   or sends one approved CSV document from the allowlisted private Telegram chat.
+1. The user exports booked transactions from online banking.
+2. The user transfers the file to the host by any local method (USB, SFTP, or a
+   mounted directory), or sends one approved CSV document from the allowlisted
+   private Telegram chat.
 3. `finance-assistant inspect FILE` validates layout, date coverage, currency, row count, and warnings without showing private rows.
 4. `finance-assistant import FILE` previews the import and performs no write.
-5. After review, the owner runs `finance-assistant import FILE --commit`.
+5. After review, the user runs `finance-assistant import FILE --commit`.
 6. The app creates an import batch and commits valid rows atomically.
 7. Reference-backed duplicates are skipped; weak content matches are reported as possible duplicates.
 

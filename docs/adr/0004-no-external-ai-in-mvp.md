@@ -9,4 +9,4 @@ Financial transaction descriptions and counterparties are sensitive. A determini
 
 ## Decision
 
-No external LLM or local LLM runtime in the MVP. First build deterministic merchant extraction, user corrections, analytics, and evaluation metrics. Any later AI capability requires explicit owner approval, an ADR, data-minimisation design, provider review, cost estimate, and kill switch.
+No external LLM or local LLM runtime in the MVP. First build deterministic merchant extraction, user corrections, analytics, and evaluation metrics. Any later AI capability requires maintainer approval, an ADR, data-minimisation design, provider review, cost estimate, and kill switch.

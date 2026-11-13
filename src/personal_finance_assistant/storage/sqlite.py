@@ -454,7 +454,7 @@ class Database:
 
         Exact-file protection stays in place. When possible duplicates were
         skipped, the file hash is recorded with an ``incomplete`` status so the
-        owner can re-run the same file with ``--accept-possible-duplicates`` and
+        user can re-run the same file with ``--accept-possible-duplicates`` and
         append the skipped rows to the same batch instead of being locked out.
         """
 
@@ -904,7 +904,7 @@ class Database:
         override: ImportRowOverride,
         now: str,
     ) -> None:
-        """Apply explicit owner edits during the same import transaction."""
+        """Apply explicit user edits during the same import transaction."""
 
         if override.merchant is not None:
             merchant = " ".join(override.merchant.split()).strip()
@@ -1291,7 +1291,7 @@ class Database:
 
         Net cash flow is ``income + refunds - expenses - fees``. Unlinked
         reversals remain visible in reconciliation but are not counted as
-        ordinary income or spending until the owner links them to an original
+        ordinary income or spending until the user links them to an original
         transaction.
         """
 
@@ -1355,7 +1355,7 @@ class Database:
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[TransactionRecord, ...]:
-        """Return a bounded owner-visible transaction list for local interfaces."""
+        """Return a bounded user-visible transaction list for local interfaces."""
 
         records, _ = self.transaction_page(
             start,
@@ -1606,7 +1606,7 @@ class Database:
         )
 
     def list_review_candidates(self, *, limit: int = 50) -> tuple[ReviewCandidate, ...]:
-        """Return uncertain transactions for explicit local owner review."""
+        """Return uncertain transactions for explicit local user review."""
 
         if limit < 1 or limit > 500:
             raise ValueError("review limit must be between 1 and 500")

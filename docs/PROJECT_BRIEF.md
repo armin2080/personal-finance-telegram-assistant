@@ -2,14 +2,16 @@
 
 ## Objective
 
-Deliver a private personal finance assistant for one owner. It ingests bank exports from a German Sparkasse account, converts transactions into a clean canonical ledger, learns corrections, analyses spending and income, manages budgets, detects recurring payments, and exposes a convenient Telegram interface.
+Deliver a private, single-user personal finance assistant. It ingests bank exports from a German Sparkasse account, converts transactions into a clean canonical ledger, learns corrections, analyses spending and income, manages budgets, detects recurring payments, and exposes a convenient Telegram interface.
 
 ## Users and operating context
 
-- Initial user: one account owner.
+- Intended user: one person managing their own accounts.
 - Main data source: manual Sparkasse account-export files.
-- Hosting target: an already-owned Raspberry Pi, initially the low-memory Zero 2 W class.
-- User interface: private Telegram chat; local CLI remains available for import, backup, recovery, and maintenance.
+- Hosting: a self-hosted Linux machine the user controls, which may be a
+  low-memory device.
+- Interfaces: private Telegram chat, a local CLI for import and maintenance, and
+  a loopback-only web cockpit.
 - Primary language for data: German bank-export labels; presentation can support English first and German later.
 - Currency/timezone defaults: EUR and `Europe/Berlin`.
 
@@ -36,9 +38,9 @@ Measure quality before engagement:
 ## Explicit non-goals for MVP
 
 - Automatic bank connectivity or login (FinTS/PSD2 is a later investigation).
-- Multi-user accounts or public deployment.
+- Multi-tenant accounts or a hosted public service.
 - Investment, tax, credit, or legal advice.
 - Executing transfers, purchases, cancellations, or any bank action.
 - External AI access to transaction-level information.
-- Full web dashboard or Telegram Mini App.
+- A Telegram Mini App, or any interface that requires exposing the cockpit to the public internet.
 - Receipt OCR, email scraping, or location tracking.

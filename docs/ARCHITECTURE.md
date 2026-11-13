@@ -2,10 +2,10 @@
 
 ## Decision summary
 
-**One Python application, one SQLite database, one Telegram bot process, one owner.** Import data locally first. Telegram handlers are thin adapters. No separate cloud compute or database service is required; Telegram still processes bot updates and replies through its Bot API.
+**One Python application, one SQLite database, one Telegram bot process, one user.** Import data locally first. Telegram handlers are thin adapters. No separate cloud compute or database service is required; Telegram still processes bot updates and replies through its Bot API.
 
 ```text
-Sparkasse CSV file (local on Pi)
+Sparkasse CSV file (local)
           |
           v
 [Source adapter: sparkasse_csv_camt_v8]
@@ -69,7 +69,7 @@ Loopback web dashboard -> same application services
 - CLI: import, inspect, backup, database maintenance, recovery.
 - Telegram: user commands and concise results. No SQL in handlers.
 - Web dashboard: local FastAPI adapter serving a responsive static cockpit. It
-  binds to loopback by default, exposes read and owner-management endpoints over
+  binds to loopback by default, exposes read and user-management endpoints over
   the application services, and performs no independent financial calculations.
   The presentation uses dependency-light HTML/CSS/JS with interactive SVG charts;
   financial values, shares and projections are computed server-side. The same
@@ -81,11 +81,11 @@ Loopback web dashboard -> same application services
 - A future Telegram Mini App requires a separate authentication and threat-model
   decision; it must not be inferred from the local dashboard.
 
-## Runtime decision: Raspberry Pi over Telegram Serverless
+## Runtime decision: self-hosted Python over Telegram Serverless
 
-Telegram Serverless currently runs JavaScript ES modules in Telegram's V8 runtime with its own database interface. It is not a Python host. The Pi lets the application remain in Python and keep transaction storage local. The Bot API supports long polling; polling and webhooks are mutually exclusive, so this app must not run a webhook at the same time.
+Telegram Serverless runs JavaScript ES modules in Telegram's V8 runtime with its own database interface. It is not a Python host, and it would move transaction storage to a hosted service. Running the application on a self-hosted Linux machine keeps the implementation in Python and keeps financial data on hardware the user controls. The Bot API supports long polling; polling and webhooks are mutually exclusive, so this application must not run a webhook at the same time.
 
-For the first release, long polling is preferable to a webhook: the Pi only needs outbound HTTPS connectivity and no public inbound listener. The service can run under systemd. A bot token and one allowlisted user ID are required.
+For the first release, long polling is preferable to a webhook: the host needs outbound HTTPS connectivity only, with no public inbound listener. The process can run under systemd. A bot token and at least one allowlisted numeric user ID are required.
 
 ## Data flow for importing a CSV
 

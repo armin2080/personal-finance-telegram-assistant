@@ -220,3 +220,42 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Local financial data. Nothing in this section may ever be committed.
+# Real statements, database files, and backups must stay on your own machine.
+# ---------------------------------------------------------------------------
+artifacts/
+data/*
+!data/.gitkeep
+
+# SQLite databases and sidecars
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite-journal
+*.db
+*.db-wal
+*.db-shm
+
+# Local backups and exports
+*.bak
+*.backup
+*-backup.sqlite3
+pre-*.sqlite3
+*.harmonized
+*.dump
+
+# Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/*.pub
+secrets/
+credentials*
+
+# Any *.env file (for example bot.env), except the committed example
+*.env
