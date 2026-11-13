@@ -17,7 +17,7 @@ evidence that matched.
 A lower-priority rule can never overwrite a row whose classification or category
 source is `user`.
 
-## Fee recognition (DEF-01)
+## Fee recognition
 
 Fee recognition is token-aware and context-aware.
 

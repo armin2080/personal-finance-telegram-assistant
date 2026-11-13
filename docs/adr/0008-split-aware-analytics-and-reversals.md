@@ -5,9 +5,9 @@
 
 ## Context
 
-The QA recovery found that transaction splits were stored but ignored by every
-reporting query, and that an unlinked reversal was treated as refund income. A
-€12,50 reversal therefore changed net cash flow while also leaving the original
+Transaction splits were stored but ignored by every reporting query, so a split
+purchase was reported under a single category. An unlinked reversal was treated
+as refund income, which changed net cash flow while also leaving the original
 expense untouched. Import undo also failed when split children existed.
 
 ## Decision

@@ -1,4 +1,4 @@
-"""Regression coverage for the independent QA recovery defects."""
+"""End-to-end coverage of classification, reversal, split, import and review flows."""
 
 from __future__ import annotations
 
