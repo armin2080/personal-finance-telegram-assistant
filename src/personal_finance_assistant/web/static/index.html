@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Personal Finance Cockpit</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=20261112-1">
+    <link rel="stylesheet" href="/assets/styles.css?v=20261113-1">
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -236,7 +236,6 @@
             </label>
             <div class="review-actions">
               <button id="import-commit" class="button button-primary" type="button">Import rows</button>
-              <button id="import-remember-edits" class="button" type="button">Remember edited rows</button>
               <button id="import-reset" class="button" type="button">Choose another file</button>
             </div>
             <p class="muted">Suggestions are deterministic. Edit any row before importing. Rows marked for review remain in the Review queue.</p>
@@ -247,6 +246,14 @@
             <label class="check"><input id="import-only-review" type="checkbox"> Only rows needing review</label>
           </div>
           <div id="import-rows" class="import-rows"></div>
+
+          <div id="import-actions" class="import-actions" role="group" aria-label="Import actions">
+            <span id="import-edit-status" class="import-edit-status" aria-live="polite">Choose a file to preview it.</span>
+            <div class="import-actions-buttons">
+              <button id="import-remember-edits" class="button" type="button">Remember edited rows</button>
+              <button id="import-commit-bottom" class="button button-primary" type="button">Import rows</button>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -366,6 +373,6 @@
         </section>
       </div>
     </main>
-    <script src="/assets/app.js?v=20261112-1"></script>
+    <script src="/assets/app.js?v=20261113-1"></script>
   </body>
 </html>

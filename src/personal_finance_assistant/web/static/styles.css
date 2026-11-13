@@ -228,3 +228,23 @@ tr.clickable:hover { background: rgba(122, 167, 255, 0.06); }
   .import-card-head { gap: 8px; }
   .import-amount { font-size: 0.95rem; }
 }
+
+/* Sticky import action bar keeps the submit control reachable on a phone. */
+.import-actions {
+  position: sticky; bottom: 0; z-index: 8;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 14px; padding: 12px 14px;
+  background: rgba(12, 16, 23, 0.97); backdrop-filter: blur(8px);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.38);
+}
+.import-edit-status { color: var(--muted); font-size: 0.85rem; }
+.import-edit-status.pending { color: var(--warning); }
+.import-actions-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.import-actions .button-primary { min-width: 9.5rem; }
+@media (max-width: 640px) {
+  .import-actions { align-items: stretch; }
+  .import-edit-status { flex-basis: 100%; text-align: center; }
+  .import-actions-buttons { flex-direction: column; gap: 8px; flex-basis: 100%; }
+  .import-actions-buttons .button { width: 100%; min-height: 44px; }
+}

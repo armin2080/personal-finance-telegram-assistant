@@ -272,7 +272,9 @@ through the private loopback/Tailscale path. Per-row learning is opt-in:
 `Remember this merchant` creates an exact alias and default category, while
 `Remember this description` creates a conservative descriptor rule for ambiguous
 merchants such as PayPal. Learned entries can be reviewed and deleted under
-**Merchants & rules**.
+**Merchants & rules**. Edits are only written when **Import rows** is tapped; the
+sticky bar under the row list shows how many rows are edited and stays reachable
+while scrolling on a phone.
 
 The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
 busy timeout allow concurrent reads and short writes. Keep both writing paths

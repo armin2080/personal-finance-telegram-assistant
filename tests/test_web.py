@@ -432,3 +432,17 @@ def test_apply_to_future_rule_matches_a_future_transaction(tmp_path: Path) -> No
 
     assert future["rows"][0]["category"] == "food.groceries"
     assert future["rows"][0]["classification_source"] == "user"
+
+
+def test_import_preview_exposes_a_submit_control_after_the_rows(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+
+    html = client.get("/").text
+
+    rows_index = html.index('id="import-rows"')
+    actions_index = html.index('id="import-actions"')
+    assert rows_index < actions_index
+    assert 'id="import-commit-bottom"' in html
+    assert 'id="import-edit-status"' in html
+    assert 'id="import-remember-edits"' in html
+    assert html.count('id="import-commit"') == 1
