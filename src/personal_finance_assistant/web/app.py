@@ -1121,6 +1121,25 @@ def create_app(database_path: str | Path) -> FastAPI:
     def dashboard() -> Path:
         return STATIC_DIR / "index.html"
 
+    @app.get("/manifest.webmanifest", response_class=FileResponse)
+    def manifest() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "manifest.webmanifest",
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @app.get("/sw.js", response_class=FileResponse)
+    def service_worker() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "sw.js",
+            media_type="text/javascript",
+            headers={
+                "Cache-Control": "no-store",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+
     @app.get("/assets/{filename}", response_class=FileResponse)
     def asset(filename: str) -> Path:
         path = STATIC_DIR / filename

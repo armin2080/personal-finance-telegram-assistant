@@ -259,6 +259,23 @@ cockpit to every device in that tailnet; prefer the SSH tunnel unless the
 tailnet and its devices are fully trusted. Never enable Telegram inline mode,
 a Web App/Mini App, or a public webhook for cockpit access.
 
+### Install the cockpit on your phone (PWA)
+
+The cockpit is an installable progressive web app. It must be served over HTTPS:
+Tailscale Serve provides that, and an SSH tunnel to `127.0.0.1` does not (the
+service worker requires a secure context, so it silently stays inert).
+
+1. Open `https://<pi>.<tailnet>.ts.net/` in the phone browser.
+2. Android Chrome: menu → **Add to Home screen** → **Install**.
+   iPhone Safari: Share → **Add to Home Screen**.
+3. Launch it from the home screen. It opens full screen with the Mint Growth
+   Finance icon and keeps the bottom tab bar.
+
+The service worker caches only the app shell (`/`, CSS, JS, icons, manifest)
+and never caches `/api/` responses, so transaction data is always read live from
+SQLite. Clearing site data or reinstalling refreshes the shell. After an upgrade,
+reload once; the manifest and shell assets are versioned.
+
 ### Web statement import
 
 The cockpit can preview and import a Sparkasse CSV without the CLI. Open

@@ -29,6 +29,12 @@
   with ambiguous-merchant protection.
 - Added a sticky import action bar with a live edited-row counter so the submit
   control stays reachable at the bottom of a long mobile preview.
+- Added a PWA shell: web manifest, maskable 192/512 icons generated from the
+  Mint Growth Finance logo, apple-touch-icon, theme colour and an app-shell
+  service worker that never caches `/api/` responses.
+- Reworked the mobile layout: bottom tab bar with a "More" sheet, safe-area
+  insets, 44 px tap targets, compact date toolbar, side-by-side filter actions
+  and a teal palette derived from the logo.
 - Added explicit **Edit** buttons to the desktop table and mobile transaction
   cards so any imported transaction can be recategorised later.
 - Added `transfers.blocked_account` ("Blocked account") for Sperrkonto payouts.
@@ -41,7 +47,7 @@
 - Added insight coverage for largest categories, changes, merchant
   concentration, unusual one-offs, income changes, fixed/discretionary spending,
   budget pace and recurring price changes.
-- Added 68 recovery and web-import regression tests (150 total) and documented the
+- Added 71 recovery, web-import and PWA regression tests (153 total) and documented the
   recovery baseline, semantics, rules and acceptance evidence.
 
 ## 0.1.0 — Initial project foundation

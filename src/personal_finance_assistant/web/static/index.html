@@ -2,16 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Personal Finance Cockpit</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=20261113-2">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#071a1c">
+    <meta name="description" content="Private, local-first personal finance cockpit.">
+    <title>Mint Growth Finance</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Mint Finance">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="/assets/styles.css?v=20261113-3">
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">PRIVATE · LOCAL DASHBOARD</p>
-        <h1>Personal Finance Cockpit</h1>
+      <div class="brand">
+        <img class="brand-mark" src="/assets/icon-192.png" alt="" width="40" height="40" decoding="async">
+        <div>
+          <p class="eyebrow">PRIVATE · LOCAL DASHBOARD</p>
+          <h1>Mint Growth Finance</h1>
+        </div>
       </div>
       <div class="status" id="health" aria-live="polite">Checking local database…</div>
     </header>
@@ -28,6 +41,16 @@
       <button class="navlink" data-section="ask">Ask your finances</button>
       <button class="navlink" data-section="settings">Settings</button>
     </nav>
+
+    <nav class="tabbar" id="tabbar" aria-label="Primary sections"></nav>
+    <div class="tabsheet-backdrop" id="tabsheet-backdrop" hidden></div>
+    <div class="tabsheet" id="tabsheet" role="dialog" aria-modal="true" aria-labelledby="tabsheet-title" hidden>
+      <div class="tabsheet-head">
+        <h2 id="tabsheet-title">More</h2>
+        <button class="button button-small" id="tabsheet-close" type="button">Close</button>
+      </div>
+      <div class="tabsheet-grid" id="tabsheet-grid"></div>
+    </div>
 
     <main class="shell" id="main">
       <section class="toolbar" aria-label="Reporting period">
@@ -370,9 +393,15 @@
             <div id="integrity" class="muted">Loading…</div>
             <p class="muted">The dashboard binds to 127.0.0.1 by default. Do not expose it without a separate authentication and threat-model decision.</p>
           </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">APP</p><h2>Install on your phone</h2></div></div>
+            <p class="muted">Add Mint Growth Finance to your home screen for a full-screen cockpit that opens like an app.</p>
+            <button id="install-app" class="button button-primary" type="button" hidden>Install app</button>
+            <p id="install-hint" class="muted">Android: browser menu → “Add to Home screen”. iPhone: Share → “Add to Home Screen”.</p>
+          </article>
         </section>
       </div>
     </main>
-    <script src="/assets/app.js?v=20261113-2"></script>
+    <script src="/assets/app.js?v=20261113-3"></script>
   </body>
 </html>

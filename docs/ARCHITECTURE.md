@@ -75,7 +75,9 @@ Loopback web dashboard -> same application services
   financial values, shares and projections are computed server-side. The same
   adapter offers a mobile-first CSV import preview/commit flow; uploads are parsed
   locally, previews expire, and the source file is not retained after the request
-  or sent to Telegram.
+  or sent to Telegram. The shell is an installable PWA with a manifest, an
+  offline app-shell service worker that never caches `/api/`, and a bottom tab
+  bar below 880 px.
 - A future Telegram Mini App requires a separate authentication and threat-model
   decision; it must not be inferred from the local dashboard.
 

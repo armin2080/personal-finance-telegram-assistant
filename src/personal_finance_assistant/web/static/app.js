@@ -21,6 +21,7 @@ const state = {
   section: "overview",
   categories: {},
   importPreview: null,
+  reviewCount: 0,
 };
 
 const money = (value) => {
@@ -218,6 +219,7 @@ const showSection = (name, { load = true } = {}) => {
   document.querySelectorAll(".section").forEach((section) => {
     section.classList.toggle("active", section.id === `section-${name}`);
   });
+  syncTabState(name);
   persistState();
   if (load) loadForSection(name);
 };
@@ -422,8 +424,8 @@ const loadOverview = async () => {
       api(`/api/weekly-trends?${query}`),
       api("/api/review?limit=500"),
     ]);
-    $("review-count").textContent = String(review.review.length);
-    $("review-count").hidden = review.review.length === 0;
+    state.reviewCount = review.review.length;
+    updateReviewBadges();
     $("income").textContent = money(overview.income);
     $("expenses").textContent = money(overview.expenses);
     $("net").textContent = money(overview.net_cash_flow);
@@ -1212,9 +1214,154 @@ const rememberEditedImportRows = () => {
   }
 };
 
+const TAB_PRIMARY = ["overview", "transactions", "import", "budgets"];
+
+const TAB_LABELS = {
+  overview: "Home",
+  transactions: "Activity",
+  import: "Import",
+  budgets: "Budgets",
+};
+
+const TAB_ICONS = {
+  overview: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
+  transactions: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>',
+  import: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
+  budgets: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 12V4"/><path d="M12 12l5.6 2.8"/></svg>',
+  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
+};
+
+const updateReviewBadges = () => {
+  const count = state.reviewCount || 0;
+  ["review-count", "sheet-review-count", "tab-more-dot"].forEach((id) => {
+    const badge = $(id);
+    if (!badge) return;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  });
+};
+
+const setTabSheetOpen = (open) => {
+  const sheet = $("tabsheet");
+  const backdrop = $("tabsheet-backdrop");
+  const more = $("tab-more");
+  if (!sheet || !backdrop) return;
+  sheet.hidden = !open;
+  backdrop.hidden = !open;
+  if (more) more.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    const first = sheet.querySelector("button");
+    if (first) first.focus();
+  }
+};
+
+const buildTabBar = () => {
+  const bar = $("tabbar");
+  const grid = $("tabsheet-grid");
+  if (!bar || !grid) return;
+  const links = [...document.querySelectorAll(".mainnav .navlink")];
+  if (!links.length) return;
+  const labelOf = (link) => {
+    const clone = link.cloneNode(true);
+    clone.querySelectorAll(".pill").forEach((badge) => badge.remove());
+    return clone.textContent.trim();
+  };
+  const labels = new Map(links.map((link) => [link.dataset.section, labelOf(link)]));
+  const secondary = [...labels.keys()].filter((section) => !TAB_PRIMARY.includes(section));
+  bar.innerHTML = TAB_PRIMARY.filter((section) => labels.has(section)).map((section) => `
+    <button class="tab" type="button" data-section="${section}">
+      ${TAB_ICONS[section] || ""}
+      <span>${escapeHtml(TAB_LABELS[section] || labels.get(section))}</span>
+    </button>`).join("") + `
+    <button class="tab" type="button" id="tab-more" aria-expanded="false" aria-controls="tabsheet">
+      ${TAB_ICONS.more}
+      <span>More</span>
+      <span class="pill" id="tab-more-dot" hidden>0</span>
+    </button>`;
+  grid.innerHTML = secondary.map((section) => `
+    <button type="button" data-section="${section}">${escapeHtml(labels.get(section))}${
+      section === "review" ? ' <span class="pill" id="sheet-review-count" hidden>0</span>' : ""
+    }</button>`).join("");
+  updateReviewBadges();
+};
+
+const syncTabState = (section) => {
+  document.querySelectorAll(".tab[data-section]").forEach((button) => {
+    const active = button.dataset.section === section;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  const more = $("tab-more");
+  if (more) {
+    const active = !TAB_PRIMARY.includes(section);
+    more.classList.toggle("active", active);
+    more.setAttribute("aria-current", active ? "page" : "false");
+  }
+  document.querySelectorAll("#tabsheet-grid button").forEach((button) => {
+    const active = button.dataset.section === section;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+};
+
+const registerServiceWorker = () => {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+  });
+};
+
+let deferredInstallPrompt = null;
+
+const bindInstallPrompt = () => {
+  const button = $("install-app");
+  if (!button) return;
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    button.hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    button.hidden = true;
+    const hint = $("install-hint");
+    if (hint) hint.textContent = "Installed. Open Mint Growth Finance from your home screen.";
+  });
+  button.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice.catch(() => undefined);
+    deferredInstallPrompt = null;
+    button.hidden = true;
+  });
+};
+
 const bindEvents = () => {
+  buildTabBar();
+  bindInstallPrompt();
   document.querySelectorAll(".navlink").forEach((button) => {
     button.addEventListener("click", () => showSection(button.dataset.section));
+  });
+  document.addEventListener("click", (event) => {
+    const tab = event.target.closest("#tabbar [data-section], #tabsheet-grid [data-section]");
+    if (tab) {
+      event.preventDefault();
+      setTabSheetOpen(false);
+      showSection(tab.dataset.section);
+      return;
+    }
+    if (event.target.closest("#tab-more")) {
+      event.preventDefault();
+      setTabSheetOpen($("tabsheet").hidden);
+      return;
+    }
+    if (event.target.closest("#tabsheet-close") || event.target.id === "tabsheet-backdrop") {
+      event.preventDefault();
+      setTabSheetOpen(false);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("tabsheet") && !$("tabsheet").hidden) setTabSheetOpen(false);
   });
   $("refresh").addEventListener("click", refreshAll);
   $("import-form").addEventListener("submit", async (event) => {
@@ -1530,6 +1677,7 @@ const bindEvents = () => {
 };
 
 const initialize = async () => {
+  registerServiceWorker();
   await fetchCategories();
   if (!applyHash()) {
     await setDefaultDates();

@@ -66,7 +66,7 @@ def test_dashboard_serves_static_root_and_assets(tmp_path: Path) -> None:
     asset = client.get("/assets/styles.css")
 
     assert root.status_code == 200
-    assert "Personal Finance Cockpit" in root.text
+    assert "Mint Growth Finance" in root.text
     assert asset.status_code == 200
     assert "text/css" in asset.headers["content-type"]
 
@@ -533,3 +533,56 @@ def test_edit_controls_are_rendered_in_the_transaction_views(tmp_path: Path) -> 
     assert script.status_code == 200
     assert 'data-action="edit-tx"' in script.text
     assert "transfers.blocked_account" in script.text
+
+
+def test_pwa_manifest_and_service_worker_are_served(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+
+    manifest = client.get("/manifest.webmanifest")
+    worker = client.get("/sw.js")
+    html = client.get("/").text
+
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    body = manifest.json()
+    assert body["name"] == "Mint Growth Finance"
+    assert body["display"] == "standalone"
+    assert body["start_url"]
+    assert {icon["sizes"] for icon in body["icons"]} >= {"192x192", "512x512"}
+    assert any(icon.get("purpose") == "maskable" for icon in body["icons"])
+
+    assert worker.status_code == 200
+    assert "Service-Worker-Allowed" in worker.headers
+    assert "/api/" in worker.text
+
+    assert 'rel="manifest"' in html
+    assert 'name="theme-color"' in html
+    assert "viewport-fit=cover" in html
+    assert 'rel="apple-touch-icon"' in html
+    assert 'rel="icon"' in html
+
+
+def test_pwa_icons_are_served_as_png(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "finance.sqlite3"))
+
+    for name in (
+        "icon-192.png",
+        "icon-512.png",
+        "icon-maskable-512.png",
+        "apple-touch-icon.png",
+        "favicon-32.png",
+    ):
+        response = client.get(f"/assets/{name}")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"] == "image/png", name
+        assert response.content.startswith(b"\x89PNG\r\n\x1a\n"), name
+
+
+def test_mobile_shell_markup_is_present(tmp_path: Path) -> None:
+    html = TestClient(create_app(tmp_path / "finance.sqlite3")).get("/").text
+
+    assert 'id="tabbar"' in html
+    assert 'id="tabsheet"' in html
+    assert 'id="tabsheet-backdrop"' in html
+    assert 'class="brand-mark"' in html
+    assert 'id="install-app"' in html

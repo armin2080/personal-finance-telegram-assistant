@@ -124,6 +124,14 @@ transactions, clicking a month changes the period, and insight clicks open the
 supporting rows. The dashboard uses the configured local SQLite database and
 exposes no public listener by default.
 
+The cockpit is an installable PWA. On a phone it uses a bottom tab bar (Home,
+Activity, Import, Budgets, More) with safe-area padding, 44 px tap targets and
+card-based transactions. Serve it over HTTPS (for example through a private
+VPN or SSH tunnel with a TLS endpoint) and use the browser's "Add to Home
+screen" action; **Settings → Install on your phone** shows the same hint. The
+service worker caches only the app shell and never caches `/api/` responses, so
+financial data is always read from the local database.
+
 ## Telegram commands
 
 The private bot supports `/summary`, `/spending`, `/income`, `/compare`, `/review`
