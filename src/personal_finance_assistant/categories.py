@@ -33,6 +33,7 @@ CATEGORY_REGISTRY: dict[str, str] = {
     "income.refund": "Refund",
     "income.other": "Other income",
     "transfers": "Transfers",
+    "transfers.blocked_account": "Blocked account",
     "financial.fees": "Financial fees",
     "cash.withdrawal": "Cash",
     "savings.investments": "Savings and investments",
@@ -72,6 +73,16 @@ CONSUMER_CATEGORIES: frozenset[str] = frozenset(
         "housing.utilities",
         "housing.internet",
         "housing.household",
+    }
+)
+
+# Categories that represent a movement between the owner's own accounts. They
+# are excluded from income and expenditure even if a row's classification is
+# stale, so money from an untracked blocked account can never inflate income.
+TRANSFER_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "transfers",
+        "transfers.blocked_account",
     }
 )
 

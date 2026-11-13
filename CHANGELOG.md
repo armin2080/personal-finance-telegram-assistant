@@ -29,13 +29,19 @@
   with ambiguous-merchant protection.
 - Added a sticky import action bar with a live edited-row counter so the submit
   control stays reachable at the bottom of a long mobile preview.
+- Added explicit **Edit** buttons to the desktop table and mobile transaction
+  cards so any imported transaction can be recategorised later.
+- Added `transfers.blocked_account` ("Blocked account") for Sperrkonto payouts.
+  Money released from a blocked account is treated as an own-account transfer and
+  excluded from income and expenditure by category, even if a stored
+  classification is stale.
 - Rebuilt the dashboard with nine navigable sections, interactive SVG charts,
   URL state, click drill-down, mobile transaction cards, health status and clean
   error/empty/loading states.
 - Added insight coverage for largest categories, changes, merchant
   concentration, unusual one-offs, income changes, fixed/discretionary spending,
   budget pace and recurring price changes.
-- Added 61 recovery and web-import regression tests (143 total) and documented the
+- Added 68 recovery and web-import regression tests (150 total) and documented the
   recovery baseline, semantics, rules and acceptance evidence.
 
 ## 0.1.0 — Initial project foundation

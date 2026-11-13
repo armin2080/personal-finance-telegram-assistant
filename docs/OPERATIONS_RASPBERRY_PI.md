@@ -276,6 +276,12 @@ merchants such as PayPal. Learned entries can be reviewed and deleted under
 sticky bar under the row list shows how many rows are edited and stays reachable
 while scrolling on a phone.
 
+Every imported transaction stays editable. Open **Transactions**, then tap the
+**Edit** button on a row (or the card on a phone) to change merchant, category,
+type or note, or to split and link rows. Choosing **Blocked account** or
+**Transfers** switches the type to **Transfer** automatically, so the amount is
+excluded from income and expenditure.
+
 The bot and cockpit can share the same SQLite database. WAL mode and a 15-second
 busy timeout allow concurrent reads and short writes. Keep both writing paths
 (corrections, budgets, imports) short.

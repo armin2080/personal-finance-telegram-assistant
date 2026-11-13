@@ -99,9 +99,26 @@ Learning is opt-in per row in the web import flow. The owner chooses
 | `education` | education, school, university, kurs, studium |
 | `personal_care` | friseur, salon, personal care |
 | `gifts_donations` | gift, donation, spende, geschenk |
+| `transfers.blocked_account` | sperrkonto, blocked account, blocked deposit |
 
 Purpose-text rules are used only when merchant evidence is absent. They are
 deliberately less confident than exact merchant patterns.
+
+## Blocked account (Sperrkonto) payouts
+
+A monthly payout from a blocked account is the owner's own money being released,
+not new income. Rows containing `sperrkonto`, `blocked account` or
+`blocked deposit` are classified `transfer_candidate` with category
+`transfers.blocked_account` at 0.95 confidence.
+
+- They are excluded from income and from expenditure.
+- They appear in the overview's "Transfers excluded" figure.
+- They are not treated as recurring spending and never count toward a budget.
+- The exclusion is enforced by category, so manually choosing
+  **Blocked account** in the transaction editor is enough; the UI also switches
+  the classification to **Transfer** automatically.
+- A matching merchant or description can be remembered during import so future
+  payouts classify themselves.
 
 ## Review policy
 

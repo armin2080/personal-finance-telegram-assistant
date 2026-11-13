@@ -620,3 +620,34 @@ def test_identical_content_rows_can_have_distinct_overrides(tmp_path: Path) -> N
         ("First Merchant", "food.coffee"),
         ("Second Merchant", "shopping.general"),
     ]
+
+
+def test_stale_income_classification_on_a_transfer_category_is_not_income(
+    tmp_path: Path,
+) -> None:
+    from datetime import date
+
+    database = Database(tmp_path / "finance.sqlite3")
+    result = database.import_file(parse_sparkasse_csv(FIXTURE))
+    with database.session() as connection:
+        transaction_id = connection.execute(
+            """SELECT id FROM transactions
+               WHERE import_id = ? AND amount_minor > 0 LIMIT 1""",
+            (result.import_id,),
+        ).fetchone()[0]
+        connection.execute(
+            """UPDATE transactions
+               SET category_key = 'transfers.blocked_account',
+                   category_source = 'user',
+                   classification = 'income_candidate'
+               WHERE id = ?""",
+            (transaction_id,),
+        )
+
+    report = database.period_report(date(2026, 1, 1), date(2027, 1, 1))
+
+    assert report.income_minor == 0
+    assert report.transfers_minor >= 123456
+    assert all(
+        item.category_key != "transfers.blocked_account" for item in report.category_expenses
+    )

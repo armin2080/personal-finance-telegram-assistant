@@ -446,3 +446,90 @@ def test_import_preview_exposes_a_submit_control_after_the_rows(tmp_path: Path) 
     assert 'id="import-edit-status"' in html
     assert 'id="import-remember-edits"' in html
     assert html.count('id="import-commit"') == 1
+
+
+def test_blocked_account_payout_is_excluded_from_income_and_expenses(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    header = (
+        '"Buchungstag";"Buchungstext";"Verwendungszweck";'
+        '"Beguenstigter/Zahlungspflichtiger";"Betrag";"Waehrung";"Info"\n'
+    )
+    csv = (
+        header
+        + '"01.03.26";"GUTSCHRIFT";"MONATLICHE AUSZAHLUNG SPERRKONTO";'
+        + '"Blocked Account Service";"992,00";"EUR";"Umsatz gebucht"\n'
+        + '"02.03.26";"KARTENZAHLUNG";"REWE SAGT DANKE";'
+        + '"REWE";"-50,00";"EUR";"Umsatz gebucht"\n'
+    ).encode("utf-8")
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", csv, "text/csv")},
+    ).json()
+    blocked = next(row for row in preview["rows"] if row["amount"]["minor"] > 0)
+    assert blocked["category"] == "transfers.blocked_account"
+    assert blocked["classification"] == "transfer_candidate"
+
+    client.post("/api/imports/commit", json={"preview_id": preview["preview_id"]})
+    overview = client.get(
+        "/api/overview",
+        params={"start": "2026-03-01", "end": "2026-04-01"},
+    ).json()
+
+    assert overview["income"] == {"minor": 0, "currency": "EUR"}
+    assert overview["expenses"] == {"minor": 5000, "currency": "EUR"}
+    assert overview["transfers"] == {"minor": 99200, "currency": "EUR"}
+    assert overview["net_cash_flow"] == {"minor": -5000, "currency": "EUR"}
+
+    budgets = client.get("/api/budgets", params={"month": "2026-03"}).json()
+    assert budgets["total_expenses"] == {"minor": 5000, "currency": "EUR"}
+
+
+def test_imported_transaction_can_be_recategorised_after_submission(tmp_path: Path) -> None:
+    database_path = tmp_path / "finance.sqlite3"
+    client = TestClient(create_app(database_path))
+    preview = client.post(
+        "/api/imports/preview",
+        files={"file": ("statement.csv", FIXTURE.read_bytes(), "text/csv")},
+    ).json()
+    client.post("/api/imports/commit", json={"preview_id": preview["preview_id"]})
+    committed = client.get(
+        "/api/transactions",
+        params={"start": "1900-01-01", "end": "2100-01-01", "limit": 1},
+    ).json()["transactions"][0]
+    assert committed["category"] != "food.coffee"
+
+    updated = client.post(
+        f"/api/transactions/{committed['id']}/correct",
+        json={
+            "classification": "expense_candidate",
+            "category_key": "food.coffee",
+            "note": "corrected after import",
+        },
+    )
+
+    assert updated.status_code == 200
+    reloaded = client.get(
+        "/api/transactions",
+        params={"start": "1900-01-01", "end": "2100-01-01", "ids": committed["id"]},
+    ).json()["transactions"][0]
+    assert reloaded["category"] == "food.coffee"
+    assert reloaded["category_source"] == "user"
+    assert reloaded["review_status"] == "confirmed"
+    assert reloaded["note"] == "corrected after import"
+
+    overview = client.get(
+        "/api/overview",
+        params={"start": "2026-03-01", "end": "2026-04-01"},
+    ).json()
+    assert overview["expenses"]["minor"] > 0
+
+
+def test_edit_controls_are_rendered_in_the_transaction_views(tmp_path: Path) -> None:
+    html = TestClient(create_app(tmp_path / "finance.sqlite3")).get("/").text
+    script = TestClient(create_app(tmp_path / "finance.sqlite3")).get("/assets/app.js?v=20261113-1")
+
+    assert 'data-action="edit-tx"' not in html
+    assert script.status_code == 200
+    assert 'data-action="edit-tx"' in script.text
+    assert "transfers.blocked_account" in script.text

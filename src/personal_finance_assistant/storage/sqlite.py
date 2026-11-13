@@ -13,7 +13,7 @@ from contextlib import contextmanager, suppress
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from personal_finance_assistant.categories import CATEGORY_REGISTRY
+from personal_finance_assistant.categories import CATEGORY_REGISTRY, TRANSFER_CATEGORIES
 from personal_finance_assistant.domain import (
     BudgetMonthSummary,
     BudgetStatus,
@@ -1093,12 +1093,16 @@ class Database:
         expenses = sum(
             -int(item["amount_minor"])
             for item in flows
-            if item["classification"] == "expense_candidate" and int(item["amount_minor"]) < 0
+            if item["classification"] == "expense_candidate"
+            and item["category_key"] not in TRANSFER_CATEGORIES
+            and int(item["amount_minor"]) < 0
         )
         income = sum(
             int(item["amount_minor"])
             for item in flows
-            if item["classification"] == "income_candidate" and int(item["amount_minor"]) > 0
+            if item["classification"] == "income_candidate"
+            and item["category_key"] not in TRANSFER_CATEGORIES
+            and int(item["amount_minor"]) > 0
         )
         return {
             "expenses_minor": expenses,
@@ -1138,7 +1142,11 @@ class Database:
             amount = int(row["amount_minor"])
             classification = row["classification"]
             category = row["category_key"]
-            if classification == "expense_candidate" and amount < 0:
+            if category in TRANSFER_CATEGORIES:
+                # Own-account movements never count as income or expenditure,
+                # even when a stored classification is stale.
+                transfers_minor += abs(amount)
+            elif classification == "expense_candidate" and amount < 0:
                 spent = -amount
                 expenses_minor += spent
                 expenses[category] = expenses.get(category, 0) + spent
@@ -2361,7 +2369,11 @@ class Database:
         total = 0
         uncategorized = 0
         for row in flows:
-            if row["classification"] == "expense_candidate" and int(row["amount_minor"]) < 0:
+            if (
+                row["classification"] == "expense_candidate"
+                and row["category_key"] not in TRANSFER_CATEGORIES
+                and int(row["amount_minor"]) < 0
+            ):
                 amount = -int(row["amount_minor"])
                 total += amount
                 if row["category_key"] == "uncategorized":

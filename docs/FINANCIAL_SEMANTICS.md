@@ -26,6 +26,21 @@ income + refunds - expenses - fees
 Transfers, cash withdrawals, savings movements and unlinked reversals are
 excluded. This is the formula used by the independent oracle.
 
+## Transfer categories
+
+Two categories represent movement of the owner's own money and are excluded
+from income and expenditure:
+
+| Category | Meaning |
+|---|---|
+| `transfers` | Generic own-account transfer |
+| `transfers.blocked_account` | Monthly payout from a blocked account (Sperrkonto) |
+
+The exclusion is keyed on the category, not only on the stored classification,
+so a stale `income_candidate` label on a row categorised `transfers.blocked_account`
+cannot inflate income. `income + refunds - expenses - fees` therefore never
+counts blocked-account money as earnings.
+
 ## Reversals, refunds and links
 
 - An **unlinked reversal** is kept outside income, expenses, refunds, fees and

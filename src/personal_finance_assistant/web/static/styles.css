@@ -248,3 +248,9 @@ tr.clickable:hover { background: rgba(122, 167, 255, 0.06); }
   .import-actions-buttons { flex-direction: column; gap: 8px; flex-basis: 100%; }
   .import-actions-buttons .button { width: 100%; min-height: 44px; }
 }
+
+/* Row-level edit affordance */
+.row-action { text-align: right; }
+.tx-card-edit { margin-top: 10px; width: 100%; }
+.tx-card { cursor: pointer; }
+.tx-card-edit { cursor: pointer; }

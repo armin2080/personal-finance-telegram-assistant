@@ -55,6 +55,14 @@ _TRANSFER_MARKERS = (
     "onlineueberweisung",
     "dauerauftrag",
 )
+_BLOCKED_ACCOUNT_MARKERS = (
+    "sperrkonto",
+    "sperrkontoauszahlung",
+    "sperrkonto auszahlung",
+    "blocked account",
+    "blocked deposit",
+    "blocked account payout",
+)
 _OWN_ACCOUNT_MARKERS = (
     "own-account",
     "own account",
@@ -452,6 +460,16 @@ def classify_transaction(
             classification_confidence=0.95,
             category=CategoryDecision("financial.fees", 0.95, "bank fee evidence"),
             evidence="bank fee marker",
+        )
+
+    # A monthly payout from a blocked account is the owner's own money being
+    # released, not new income. It stays outside income and expenditure.
+    if _has_phrase(text, _BLOCKED_ACCOUNT_MARKERS):
+        return _resolution(
+            classification="transfer_candidate",
+            classification_confidence=0.95,
+            category=CategoryDecision("transfers.blocked_account", 0.95, "blocked account marker"),
+            evidence="blocked account payout",
         )
 
     # A transfer to a known merchant category is ordinary spending or income.

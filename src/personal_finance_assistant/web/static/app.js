@@ -360,6 +360,7 @@ const transactionRow = (row) => {
     <td><span class="status-pill ${statusClass}">${escapeHtml(row.review_status.replace("_", " "))}</span>
       <span class="muted">${Math.round((row.category_confidence || 0) * 100)}%</span></td>
     <td class="amount">${money(row.amount)}</td>
+    <td class="row-action"><button class="button button-small" data-action="edit-tx" data-id="${escapeHtml(row.id)}">Edit</button></td>
   </tr>`;
 };
 
@@ -377,6 +378,7 @@ const transactionCard = (row) => {
       <span>${escapeHtml(row.classification.replace("_candidate", ""))}</span>
       <span>${Math.round((row.category_confidence || 0) * 100)}% confidence</span>
     </div>
+    <button class="button button-small tx-card-edit" data-action="edit-tx" data-id="${escapeHtml(row.id)}">Edit category</button>
   </article>`;
 };
 
@@ -388,7 +390,7 @@ const renderTransactions = (container, rows) => {
   container.innerHTML = `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Review</th><th class="amount">Amount</th></tr></thead>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Type</th><th>Review</th><th class="amount">Amount</th><th></th></tr></thead>
         <tbody>${rows.map(transactionRow).join("")}</tbody>
       </table>
     </div>
@@ -895,6 +897,15 @@ const askQuestion = async (question) => {
   }
 };
 
+const TRANSFER_CATEGORIES = ["transfers", "transfers.blocked_account"];
+
+const syncClassificationForCategory = (categorySelect, classificationSelect) => {
+  if (!categorySelect || !classificationSelect) return;
+  if (TRANSFER_CATEGORIES.includes(categorySelect.value)) {
+    classificationSelect.value = "transfer_candidate";
+  }
+};
+
 const IMPORT_CLASSIFICATIONS = [
   ["expense_candidate", "Expense"],
   ["income_candidate", "Income"],
@@ -1142,7 +1153,9 @@ const commitImportPreview = async () => {
         overrides,
       }),
     });
-    let message = result.inserted ? `Imported ${result.inserted} row(s).` : "No rows were added.";
+    let message = result.inserted
+      ? `Imported ${result.inserted} row(s). You can change any category later under Transactions.`
+      : "No rows were added.";
     if (result.exact_duplicates) message += ` ${result.exact_duplicates} exact duplicate(s) skipped.`;
     if (result.possible_duplicates) message += ` ${result.possible_duplicates} possible duplicate(s) skipped.`;
     if (result.learned && result.learned.length) message += ` Remembered ${result.learned.length} row(s) for future imports.`;
@@ -1226,6 +1239,23 @@ const bindEvents = () => {
   $("import-search").addEventListener("input", filterImportRows);
   $("import-only-review").addEventListener("change", filterImportRows);
   $("import-rows").addEventListener("input", updateImportEditStatus);
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!target || target.tagName !== "SELECT") return;
+    if (target.id === "edit-category") {
+      syncClassificationForCategory(target, $("edit-classification"));
+      return;
+    }
+    if (target.dataset.importField === "category") {
+      const card = target.closest(".import-card");
+      syncClassificationForCategory(target, card ? card.querySelector('[data-import-field="classification"]') : null);
+      return;
+    }
+    if (target.dataset.field === "category") {
+      const card = target.closest(".review-card");
+      syncClassificationForCategory(target, card ? card.querySelector('[data-field="classification"]') : null);
+    }
+  });
   $("import-rows").addEventListener("change", updateImportEditStatus);
   $("search-button").addEventListener("click", () => { state.search = $("search").value; loadOverviewTransactions(); });
   $("search").addEventListener("keydown", (event) => {
